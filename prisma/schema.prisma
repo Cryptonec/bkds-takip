@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  yonetici
+  danisma
+}
+
+enum AttendanceStatus {
+  bekleniyor
+  gecikiyor
+  giris_eksik
+  kritik
+  gec_geldi
+  giris_tamam
+  cikis_eksik
+  tamamlandi
+  bkds_muaf
+  erken_cikis
+  derste
+}
+
+enum StaffAttendanceStatus {
+  bekleniyor
+  derste
+  gelmedi
+  gec_basladi
+  gecikiyor
+}
+
+enum AlertSeverity {
+  normal
+  uyari
+  kritik
+}
+
+enum ImportStatus {
+  bekliyor
+  isleniyor
+  tamamlandi
+  hata
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      Role     @default(danisma)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  actionLogs ActionLog[]
+}
+
+model Student {
+  id             String   @id @default(cuid())
+  adSoyad        String
+  ogrenciNo      String?  @unique
+  tc             String?
+  normalizedName String
+  aktif          Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  lessonSessions LessonSession[]
+  attendances    Attendance[]
+  bkdsAggregates BkdsAggregate[]
+}
+
+model Staff {
+  id             String   @id @default(cuid())
+  adSoyad        String
+  normalizedName String
+  aktif          Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  lessonSessions  LessonSession[]
+  staffSessions   StaffSession[]
+  staffAttendances StaffAttendance[]
+  bkdsLogs       BkdsPersonelLog[]
+}
+
+model LessonSession {
+  id           String   @id @default(cuid())
+  student      Student  @relation(fields: [studentId], references: [id])
+  studentId    String
+  staff        Staff    @relation(fields: [staffId], references: [id])
+  staffId      String
+  tarih        DateTime @db.Date
+  baslangic    DateTime
+  bitis        DateTime
+  derslik      String
+  bkdsRequired Boolean  @default(true)
+  importJobId  String?
+  createdAt    DateTime @default(now())
+
+  attendance   Attendance?
+  importJob    ImportJob?  @relation(fields: [importJobId], references: [id])
+
+  @@index([tarih])
+  @@index([studentId, tarih])
+}
+
+model StaffSession {
+  id          String   @id @default(cuid())
+  staff       Staff    @relation(fields: [staffId], references: [id])
+  staffId     String
+  tarih       DateTime @db.Date
+  baslangic   DateTime
+  bitis       DateTime
+  derslik     String
+  basladiMi   Boolean  @default(false)
+  baslamaZamani DateTime?
+  sonCikisZamani DateTime?
+  createdAt   DateTime @default(now())
+
+  staffAttendance StaffAttendance?
+
+  @@index([tarih])
+  @@index([staffId, tarih])
+}
+
+model BkdsRaw {
+  id          String   @id @default(cuid())
+  tarih       DateTime @db.Date
+  adSoyad     String
+  maskedTc    String?
+  girisZamani DateTime
+  cikisZamani DateTime?
+  fetchedAt   DateTime @default(now())
+
+  @@index([tarih])
+  @@index([adSoyad, tarih])
+}
+
+model BkdsAggregate {
+  id          String   @id @default(cuid())
+  student     Student? @relation(fields: [studentId], references: [id])
+  studentId   String?
+  tarih       DateTime @db.Date
+  adSoyad     String
+  ilkGiris    DateTime
+  sonCikis    DateTime?
+  fetchedAt   DateTime @default(now())
+
+  @@unique([studentId, tarih])
+  @@index([tarih])
+}
+
+model Attendance {
+  id            String           @id @default(cuid())
+  lessonSession LessonSession    @relation(fields: [lessonSessionId], references: [id])
+  lessonSessionId String         @unique
+  student       Student          @relation(fields: [studentId], references: [id])
+  studentId     String
+  tarih         DateTime         @db.Date
+  status        AttendanceStatus @default(bekleniyor)
+  girisZamani   DateTime?
+  cikisZamani   DateTime?
+  gercekGiris   DateTime?
+  gercekCikis   DateTime?
+  updatedAt     DateTime         @updatedAt
+
+  @@index([tarih])
+  @@index([studentId, tarih])
+}
+
+model StaffAttendance {
+  id             String               @id @default(cuid())
+  staffSession   StaffSession         @relation(fields: [staffSessionId], references: [id])
+  staffSessionId String               @unique
+  staff          Staff                @relation(fields: [staffId], references: [id])
+  staffId        String
+  tarih          DateTime             @db.Date
+  status         StaffAttendanceStatus @default(bekleniyor)
+  updatedAt      DateTime             @updatedAt
+
+  @@index([tarih])
+}
+
+model ImportJob {
+  id           String       @id @default(cuid())
+  fileName     String
+  status       ImportStatus @default(bekliyor)
+  totalRows    Int          @default(0)
+  processedRows Int         @default(0)
+  errorRows    Int          @default(0)
+  errorDetails Json?
+  createdAt    DateTime     @default(now())
+  completedAt  DateTime?
+
+  lessonSessions LessonSession[]
+}
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model ActionLog {
+  id        String   @id @default(cuid())
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model Alert {
+  id         String        @id @default(cuid())
+  type       String
+  severity   AlertSeverity
+  entityType String
+  entityId   String
+  message    String
+  tarih      DateTime      @db.Date
+  resolved   Boolean       @default(false)
+  resolvedAt DateTime?
+  createdAt  DateTime      @default(now())
+
+  @@index([tarih, resolved])
+}
+
+model BkdsPersonelLog {
+  id             String   @id @default(cuid())
+  tarih          DateTime @db.Date
+  maskedAd       String   // BKDS'den gelen maskeli isim
+  ilkGiris       DateTime
+  sonCikis       DateTime?
+  // Eşleşme sonucu
+  staffId        String?  // eşleştiyse
+  staff          Staff?   @relation(fields: [staffId], references: [id])
+  eslesmeDurumu  String   // tam_eslesme | prefix_eslesme | eslesme_yok
+  tahminEdilenAd String?  // prefix eşleşmesinde tahmin
+  createdAt      DateTime @default(now())
+
+  @@index([tarih])
+  @@index([staffId, tarih])
+}
