@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
 
-  const orgId = getOrgId(session);
+  const orgId = await getOrgId(session);
   const { maskedAd, staffId, yeniAdSoyad } = await req.json();
 
   if (!maskedAd || !staffId) {
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
 
-  const orgId = getOrgId(session);
+  const orgId = await getOrgId(session);
   const { searchParams } = new URL(req.url);
   const tarihStr = searchParams.get('tarih');
   const tarih = tarihStr ? new Date(tarihStr) : new Date();

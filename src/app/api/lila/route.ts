@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
 
-  const orgId = getOrgId(session);
+  const orgId = await getOrgId(session);
   const formData = await req.formData();
   const file = formData.get('file') as File | null;
 
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
 
-  const orgId = getOrgId(session);
+  const orgId = await getOrgId(session);
 
   const jobs = await prisma.importJob.findMany({
     where: { organizationId: orgId },

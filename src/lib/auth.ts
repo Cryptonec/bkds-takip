@@ -106,8 +106,17 @@ export const authOptions: NextAuthOptions = {
 };
 
 /** Session'dan organizationId'yi güvenli çek */
-export function getOrgId(session: any): string {
+export async function getOrgId(session: any): Promise<string> {
   const id = session?.user?.organizationId;
-  if (!id) throw new Error('organizationId bulunamadı');
-  return id as string;
+  if (id) return id as string;
+
+  // DB migrate edilmişse ilk aktif kurumu kullan (tek-kurum / migration geçiş modu)
+  try {
+    const org = await prisma.organization.findFirst({ where: { active: true } });
+    if (org) return org.id;
+  } catch {
+    // Organization tablosu henüz yok — migration bekleniyor
+  }
+
+  throw new Error('organizationId bulunamadı — lütfen npm run db:push ve npm run db:seed çalıştırın');
 }
