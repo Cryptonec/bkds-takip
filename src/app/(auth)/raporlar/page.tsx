@@ -28,6 +28,7 @@ export default function RaporlarPage() {
   async function load() {
     setLoading(true);
     const res = await fetch(`/api/attendance?tarih=${tarih}`);
+    if (!res.ok) { setLoading(false); return; }
     const data = await res.json();
     setRows(data.ogrenciRows ?? []);
     setLoading(false);

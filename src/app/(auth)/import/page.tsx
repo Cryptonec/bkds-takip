@@ -32,6 +32,7 @@ export default function ImportPage() {
   async function loadJobs() {
     setJobsLoading(true);
     const res = await fetch('/api/lila');
+    if (!res.ok) { setJobsLoading(false); return; }
     const data = await res.json();
     setJobs(data);
     setJobsLoading(false);

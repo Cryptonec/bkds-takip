@@ -23,6 +23,7 @@ export default function PersonelPage() {
     const params = new URLSearchParams();
     if (search) params.set('q', search);
     const res = await fetch(`/api/personel?${params}`);
+    if (!res.ok) { setLoading(false); return; }
     const data = await res.json();
     setStaff(Array.isArray(data) ? data : []);
     setLoading(false);

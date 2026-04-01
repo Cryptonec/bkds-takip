@@ -23,6 +23,7 @@ export default function OgrencilerPage() {
     const params = new URLSearchParams();
     if (search) params.set('q', search);
     const res = await fetch(`/api/ogrenciler?${params}`);
+    if (!res.ok) { setLoading(false); return; }
     setStudents(await res.json());
     setLoading(false);
   }
