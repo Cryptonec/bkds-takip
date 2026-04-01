@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { authOptions, getOrgId } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
 
+  const orgId = getOrgId(session);
   const { searchParams } = new URL(req.url);
   const tarihStr = searchParams.get('tarih');
   const tarih = tarihStr ? new Date(tarihStr) : new Date();
@@ -14,17 +15,17 @@ export async function GET(req: NextRequest) {
   dateOnly.setHours(0, 0, 0, 0);
 
   const [lessons, attendances, staffAttendances, alerts] = await Promise.all([
-    prisma.lessonSession.count({ where: { tarih: dateOnly } }),
+    prisma.lessonSession.count({ where: { organizationId: orgId, tarih: dateOnly } }),
     prisma.attendance.findMany({
-      where: { tarih: dateOnly },
+      where: { organizationId: orgId, tarih: dateOnly },
       select: { status: true },
     }),
     prisma.staffAttendance.findMany({
-      where: { tarih: dateOnly },
+      where: { organizationId: orgId, tarih: dateOnly },
       select: { status: true },
     }),
     prisma.alert.count({
-      where: { tarih: dateOnly, resolved: false },
+      where: { organizationId: orgId, tarih: dateOnly, resolved: false },
     }),
   ]);
 

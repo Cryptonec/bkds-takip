@@ -3,6 +3,12 @@ import { normalizeName, normalizeDerslik, parseTarihSaat } from '@/lib/utils/nor
 import type { LilaImportRow } from '@/types';
 
 export class LilaImportService {
+  private organizationId: string;
+
+  constructor(organizationId: string) {
+    this.organizationId = organizationId;
+  }
+
   async processRows(
     rows: LilaImportRow[],
     importJobId: string
@@ -30,21 +36,21 @@ export class LilaImportService {
   }
 
   private async processRow(row: LilaImportRow, importJobId: string): Promise<void> {
-    // Öğrenci bul veya oluştur
+    const orgId = this.organizationId;
+
     const normOgrenci = normalizeName(row.ogrenciAdi);
-    let student = await prisma.student.findFirst({ where: { normalizedName: normOgrenci } });
+    let student = await prisma.student.findFirst({ where: { organizationId: orgId, normalizedName: normOgrenci } });
     if (!student) {
       student = await prisma.student.create({
-        data: { adSoyad: row.ogrenciAdi.trim(), normalizedName: normOgrenci },
+        data: { organizationId: orgId, adSoyad: row.ogrenciAdi.trim(), normalizedName: normOgrenci },
       });
     }
 
-    // Öğretmen bul veya oluştur
     const normOgretmen = normalizeName(row.ogretmenAdi);
-    let staff = await prisma.staff.findFirst({ where: { normalizedName: normOgretmen } });
+    let staff = await prisma.staff.findFirst({ where: { organizationId: orgId, normalizedName: normOgretmen } });
     if (!staff) {
       staff = await prisma.staff.create({
-        data: { adSoyad: row.ogretmenAdi.trim(), normalizedName: normOgretmen },
+        data: { organizationId: orgId, adSoyad: row.ogretmenAdi.trim(), normalizedName: normOgretmen },
       });
     }
 
@@ -54,13 +60,13 @@ export class LilaImportService {
     const tarihDate = new Date(baslangic);
     tarihDate.setHours(0, 0, 0, 0);
 
-    // LessonSession — duplicate önle
     const existing = await prisma.lessonSession.findFirst({
-      where: { studentId: student.id, staffId: staff.id, baslangic, bitis },
+      where: { organizationId: orgId, studentId: student.id, staffId: staff.id, baslangic, bitis },
     });
     if (!existing) {
       await prisma.lessonSession.create({
         data: {
+          organizationId: orgId,
           studentId: student.id,
           staffId: staff.id,
           tarih: tarihDate,
@@ -73,15 +79,13 @@ export class LilaImportService {
       });
     }
 
-    // StaffSession — her öğretmen+tarih+saat kombinasyonu için 1 kayıt
-    // Birden fazla öğrenci aynı öğretmenle aynı saatte olabilir (grup dersi)
-    // O yüzden staffId+baslangic+bitis unique kontrolü yapıyoruz
     const existingStaff = await prisma.staffSession.findFirst({
-      where: { staffId: staff.id, baslangic, bitis },
+      where: { organizationId: orgId, staffId: staff.id, baslangic, bitis },
     });
     if (!existingStaff) {
       await prisma.staffSession.create({
         data: {
+          organizationId: orgId,
           staffId: staff.id,
           tarih: tarihDate,
           baslangic,
@@ -92,5 +96,3 @@ export class LilaImportService {
     }
   }
 }
-
-export const lilaImportService = new LilaImportService();

@@ -1,62 +1,79 @@
-import { bkdsProviderService } from './bkdsProviderService';
+import { prisma } from '@/lib/prisma';
+import { getBkdsService } from './bkdsProviderService';
 import { recalculateAttendance, recalculateStaffAttendance } from './attendanceService';
 import { generateAlerts } from './alertService';
 
-let pollInterval: ReturnType<typeof setInterval> | null = null;
-let isRunning = false;
+// Per-org poll durumu
+const runningOrgs = new Set<string>();
+const orgIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
-export async function runBkdsPoll(): Promise<void> {
-  if (isRunning) {
-    console.log('[BKDS Poll] Önceki çalışma devam ediyor, atlıyor...');
+export async function runBkdsPollForOrg(organizationId: string): Promise<void> {
+  if (runningOrgs.has(organizationId)) {
+    console.log(`[BKDS Poll][${organizationId}] Önceki çalışma devam ediyor, atlıyor...`);
     return;
   }
 
-  isRunning = true;
+  runningOrgs.add(organizationId);
   const tarih = new Date();
-  console.log(`[BKDS Poll] Başlatıldı: ${tarih.toISOString()}`);
+  console.log(`[BKDS Poll][${organizationId}] Başlatıldı: ${tarih.toISOString()}`);
 
   try {
-    // 1. BKDS'den veri çek
-    const records = await bkdsProviderService.fetchToday();
-    console.log(`[BKDS Poll] ${records.length} kayıt çekildi`);
+    const service = getBkdsService(organizationId);
+    const records = await service.fetchToday();
+    console.log(`[BKDS Poll][${organizationId}] ${records.length} kayıt çekildi`);
 
-    // 2. DB'ye kaydet ve aggregate et
-    await bkdsProviderService.saveAndAggregate(records, tarih);
+    await service.saveAndAggregate(records, tarih);
+    await recalculateAttendance(tarih, organizationId);
+    await recalculateStaffAttendance(tarih, organizationId);
+    await generateAlerts(tarih, organizationId);
 
-    // 3. Attendance yeniden hesapla
-    await recalculateAttendance(tarih);
-    await recalculateStaffAttendance(tarih);
-
-    // 4. Alert üret
-    await generateAlerts(tarih);
-
-    console.log(`[BKDS Poll] Tamamlandı: ${new Date().toISOString()}`);
+    console.log(`[BKDS Poll][${organizationId}] Tamamlandı: ${new Date().toISOString()}`);
   } catch (err) {
-    console.error('[BKDS Poll] Hata:', err);
+    console.error(`[BKDS Poll][${organizationId}] Hata:`, err);
   } finally {
-    isRunning = false;
+    runningOrgs.delete(organizationId);
   }
 }
 
-export function startPolling(intervalMs?: number): void {
-  const interval = intervalMs ?? Number(process.env.BKDS_POLL_INTERVAL ?? '60000');
+export function startPollingForOrg(organizationId: string, intervalMs: number = 60000): void {
+  stopPollingForOrg(organizationId);
 
-  if (pollInterval) {
-    clearInterval(pollInterval);
-  }
+  console.log(`[BKDS Poll][${organizationId}] Polling başlatıldı (${intervalMs}ms aralık)`);
+  runBkdsPollForOrg(organizationId);
 
-  console.log(`[BKDS Poll] Polling başlatıldı (${interval}ms aralık)`);
-
-  // Hemen bir kez çalıştır
-  runBkdsPoll();
-
-  pollInterval = setInterval(runBkdsPoll, interval);
+  const handle = setInterval(() => runBkdsPollForOrg(organizationId), intervalMs);
+  orgIntervals.set(organizationId, handle);
 }
 
-export function stopPolling(): void {
-  if (pollInterval) {
-    clearInterval(pollInterval);
-    pollInterval = null;
-    console.log('[BKDS Poll] Polling durduruldu');
+export function stopPollingForOrg(organizationId: string): void {
+  const handle = orgIntervals.get(organizationId);
+  if (handle) {
+    clearInterval(handle);
+    orgIntervals.delete(organizationId);
+    console.log(`[BKDS Poll][${organizationId}] Polling durduruldu`);
+  }
+}
+
+/** Tüm aktif & aboneliği geçerli kurumlar için polling başlat */
+export async function startAllPollers(): Promise<void> {
+  const orgs = await prisma.organization.findMany({
+    where: { active: true },
+    include: {
+      bkdsCredential: { select: { pollInterval: true } },
+      subscription: { select: { status: true } },
+    },
+  });
+
+  for (const org of orgs) {
+    const subOk = !org.subscription || ['aktif', 'deneme'].includes(org.subscription.status);
+    if (!subOk) continue;
+    const interval = org.bkdsCredential?.pollInterval ?? Number(process.env.BKDS_POLL_INTERVAL ?? '60000');
+    startPollingForOrg(org.id, interval);
+  }
+}
+
+export function stopAllPollers(): void {
+  for (const orgId of orgIntervals.keys()) {
+    stopPollingForOrg(orgId);
   }
 }

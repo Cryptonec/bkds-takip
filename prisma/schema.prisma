@@ -8,6 +8,7 @@ datasource db {
 }
 
 enum Role {
+  superadmin // SaaS platform yöneticisi
   admin
   yonetici
   danisma
@@ -48,158 +49,308 @@ enum ImportStatus {
   hata
 }
 
-model User {
+enum SubscriptionStatus {
+  aktif
+  pasif
+  deneme
+  iptal
+}
+
+// ─── SaaS Çok-Kiracı (Multi-tenant) Modelleri ────────────────────────────────
+
+model Organization {
   id        String   @id @default(cuid())
-  email     String   @unique
+  slug      String   @unique // url-friendly: "ankara-rem", "izmir-ozel-egitim"
   name      String
-  password  String
-  role      Role     @default(danisma)
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  actionLogs ActionLog[]
+  users           User[]
+  students        Student[]
+  staff           Staff[]
+  lessonSessions  LessonSession[]
+  staffSessions   StaffSession[]
+  bkdsRaw         BkdsRaw[]
+  bkdsAggregates  BkdsAggregate[]
+  bkdsPersonelLogs BkdsPersonelLog[]
+  attendances     Attendance[]
+  staffAttendances StaffAttendance[]
+  importJobs      ImportJob[]
+  alerts          Alert[]
+  actionLogs      ActionLog[]
+  bkdsCredential  BkdsCredential?
+  subscription    Subscription?
+
+  @@index([slug])
 }
 
-model Student {
+// BKDS API kimlik bilgileri (her kurum için ayrı, şifreli)
+model BkdsCredential {
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String       @unique
+  apiUrl         String       @default("https://bkds-api.meb.gov.tr")
+  username       String
+  password       String       // bcrypt şifreli
+  cityId         String
+  districtId     String
+  remId          String
+  pollInterval   Int          @default(60000) // ms
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+// Abonelik / plan bilgisi
+model Subscription {
+  id             String             @id @default(cuid())
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String             @unique
+  status         SubscriptionStatus @default(deneme)
+  plan           String             @default("temel") // temel | profesyonel | kurumsal
+  trialEndsAt    DateTime?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  // Harici ödeme entegrasyonu (ileride)
+  externalId     String?            // Stripe/İyzico subscription id
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+}
+
+// SSO token'ları (Rehapp → bkds-takip geçici oturum)
+model SsoToken {
   id             String   @id @default(cuid())
+  token          String   @unique
+  organizationId String
+  userId         String?
+  email          String
+  name           String
+  role           Role     @default(danisma)
+  usedAt         DateTime?
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  @@index([token])
+}
+
+// ─── Kullanıcı ───────────────────────────────────────────────────────────────
+
+model User {
+  id             String       @id @default(cuid())
+  email          String
+  name           String
+  password       String?      // SSO ile girişte null olabilir
+  role           Role         @default(danisma)
+  active         Boolean      @default(true)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  actionLogs ActionLog[]
+
+  @@unique([email, organizationId]) // Aynı email farklı kurumda olabilir
+  @@index([organizationId])
+}
+
+// ─── Öğrenci & Personel ──────────────────────────────────────────────────────
+
+model Student {
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
   adSoyad        String
-  ogrenciNo      String?  @unique
+  ogrenciNo      String?
   tc             String?
   normalizedName String
-  aktif          Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  aktif          Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   lessonSessions LessonSession[]
   attendances    Attendance[]
   bkdsAggregates BkdsAggregate[]
+
+  @@unique([ogrenciNo, organizationId])
+  @@index([organizationId])
 }
 
 model Staff {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
   adSoyad        String
   normalizedName String
-  aktif          Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  aktif          Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  lessonSessions  LessonSession[]
-  staffSessions   StaffSession[]
+  lessonSessions   LessonSession[]
+  staffSessions    StaffSession[]
   staffAttendances StaffAttendance[]
-  bkdsLogs       BkdsPersonelLog[]
+  bkdsLogs         BkdsPersonelLog[]
+
+  @@index([organizationId])
 }
 
-model LessonSession {
-  id           String   @id @default(cuid())
-  student      Student  @relation(fields: [studentId], references: [id])
-  studentId    String
-  staff        Staff    @relation(fields: [staffId], references: [id])
-  staffId      String
-  tarih        DateTime @db.Date
-  baslangic    DateTime
-  bitis        DateTime
-  derslik      String
-  bkdsRequired Boolean  @default(true)
-  importJobId  String?
-  createdAt    DateTime @default(now())
+// ─── Ders & Oturum ───────────────────────────────────────────────────────────
 
-  attendance   Attendance?
-  importJob    ImportJob?  @relation(fields: [importJobId], references: [id])
+model LessonSession {
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  student        Student      @relation(fields: [studentId], references: [id])
+  studentId      String
+  staff          Staff        @relation(fields: [staffId], references: [id])
+  staffId        String
+  tarih          DateTime     @db.Date
+  baslangic      DateTime
+  bitis          DateTime
+  derslik        String
+  bkdsRequired   Boolean      @default(true)
+  importJobId    String?
+  createdAt      DateTime     @default(now())
+
+  attendance Attendance?
+  importJob  ImportJob?  @relation(fields: [importJobId], references: [id])
 
   @@index([tarih])
   @@index([studentId, tarih])
+  @@index([organizationId, tarih])
 }
 
 model StaffSession {
-  id          String   @id @default(cuid())
-  staff       Staff    @relation(fields: [staffId], references: [id])
-  staffId     String
-  tarih       DateTime @db.Date
-  baslangic   DateTime
-  bitis       DateTime
-  derslik     String
-  basladiMi   Boolean  @default(false)
-  baslamaZamani DateTime?
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  staff          Staff        @relation(fields: [staffId], references: [id])
+  staffId        String
+  tarih          DateTime     @db.Date
+  baslangic      DateTime
+  bitis          DateTime
+  derslik        String
+  basladiMi      Boolean      @default(false)
+  baslamaZamani  DateTime?
   sonCikisZamani DateTime?
-  createdAt   DateTime @default(now())
+  createdAt      DateTime     @default(now())
 
   staffAttendance StaffAttendance?
 
   @@index([tarih])
   @@index([staffId, tarih])
+  @@index([organizationId, tarih])
 }
 
-model BkdsRaw {
-  id          String   @id @default(cuid())
-  tarih       DateTime @db.Date
-  adSoyad     String
-  maskedTc    String?
-  girisZamani DateTime
-  cikisZamani DateTime?
-  fetchedAt   DateTime @default(now())
+// ─── BKDS Verileri ───────────────────────────────────────────────────────────
 
+model BkdsRaw {
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  tarih          DateTime     @db.Date
+  adSoyad        String
+  maskedTc       String?
+  girisZamani    DateTime
+  cikisZamani    DateTime?
+  fetchedAt      DateTime     @default(now())
+
+  @@index([organizationId, tarih])
   @@index([tarih])
-  @@index([adSoyad, tarih])
 }
 
 model BkdsAggregate {
-  id          String   @id @default(cuid())
-  student     Student? @relation(fields: [studentId], references: [id])
-  studentId   String?
-  tarih       DateTime @db.Date
-  adSoyad     String
-  ilkGiris    DateTime
-  sonCikis    DateTime?
-  fetchedAt   DateTime @default(now())
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  student        Student?     @relation(fields: [studentId], references: [id])
+  studentId      String?
+  tarih          DateTime     @db.Date
+  adSoyad        String
+  ilkGiris       DateTime
+  sonCikis       DateTime?
+  fetchedAt      DateTime     @default(now())
 
   @@unique([studentId, tarih])
+  @@index([organizationId, tarih])
   @@index([tarih])
 }
 
-model Attendance {
-  id            String           @id @default(cuid())
-  lessonSession LessonSession    @relation(fields: [lessonSessionId], references: [id])
-  lessonSessionId String         @unique
-  student       Student          @relation(fields: [studentId], references: [id])
-  studentId     String
-  tarih         DateTime         @db.Date
-  status        AttendanceStatus @default(bekleniyor)
-  girisZamani   DateTime?
-  cikisZamani   DateTime?
-  gercekGiris   DateTime?
-  gercekCikis   DateTime?
-  updatedAt     DateTime         @updatedAt
+model BkdsPersonelLog {
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  tarih          DateTime     @db.Date
+  maskedAd       String
+  ilkGiris       DateTime
+  sonCikis       DateTime?
+  staffId        String?
+  staff          Staff?       @relation(fields: [staffId], references: [id])
+  eslesmeDurumu  String       // tam_eslesme | prefix_eslesme | eslesme_yok
+  tahminEdilenAd String?
+  createdAt      DateTime     @default(now())
 
+  @@index([organizationId, tarih])
+  @@index([tarih])
+  @@index([staffId, tarih])
+}
+
+// ─── Devamsızlık ─────────────────────────────────────────────────────────────
+
+model Attendance {
+  id              String           @id @default(cuid())
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId  String
+  lessonSession   LessonSession    @relation(fields: [lessonSessionId], references: [id])
+  lessonSessionId String           @unique
+  student         Student          @relation(fields: [studentId], references: [id])
+  studentId       String
+  tarih           DateTime         @db.Date
+  status          AttendanceStatus @default(bekleniyor)
+  girisZamani     DateTime?
+  cikisZamani     DateTime?
+  gercekGiris     DateTime?
+  gercekCikis     DateTime?
+  updatedAt       DateTime         @updatedAt
+
+  @@index([organizationId, tarih])
   @@index([tarih])
   @@index([studentId, tarih])
 }
 
 model StaffAttendance {
-  id             String               @id @default(cuid())
-  staffSession   StaffSession         @relation(fields: [staffSessionId], references: [id])
-  staffSessionId String               @unique
-  staff          Staff                @relation(fields: [staffId], references: [id])
+  id             String                @id @default(cuid())
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  staffSession   StaffSession          @relation(fields: [staffSessionId], references: [id])
+  staffSessionId String                @unique
+  staff          Staff                 @relation(fields: [staffId], references: [id])
   staffId        String
-  tarih          DateTime             @db.Date
+  tarih          DateTime              @db.Date
   status         StaffAttendanceStatus @default(bekleniyor)
-  updatedAt      DateTime             @updatedAt
+  updatedAt      DateTime              @updatedAt
 
+  @@index([organizationId, tarih])
   @@index([tarih])
 }
 
+// ─── Import & Sistem ─────────────────────────────────────────────────────────
+
 model ImportJob {
-  id           String       @id @default(cuid())
-  fileName     String
-  status       ImportStatus @default(bekliyor)
-  totalRows    Int          @default(0)
-  processedRows Int         @default(0)
-  errorRows    Int          @default(0)
-  errorDetails Json?
-  createdAt    DateTime     @default(now())
-  completedAt  DateTime?
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  fileName       String
+  status         ImportStatus @default(bekliyor)
+  totalRows      Int          @default(0)
+  processedRows  Int          @default(0)
+  errorRows      Int          @default(0)
+  errorDetails   Json?
+  createdAt      DateTime     @default(now())
+  completedAt    DateTime?
 
   lessonSessions LessonSession[]
+
+  @@index([organizationId])
 }
 
 model SystemSetting {
@@ -210,46 +361,35 @@ model SystemSetting {
 }
 
 model ActionLog {
-  id        String   @id @default(cuid())
-  user      User?    @relation(fields: [userId], references: [id])
-  userId    String?
-  action    String
-  entity    String?
-  entityId  String?
-  details   Json?
-  createdAt DateTime @default(now())
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  user           User?        @relation(fields: [userId], references: [id])
+  userId         String?
+  action         String
+  entity         String?
+  entityId       String?
+  details        Json?
+  createdAt      DateTime     @default(now())
 
+  @@index([organizationId, createdAt])
   @@index([createdAt])
 }
 
 model Alert {
-  id         String        @id @default(cuid())
-  type       String
-  severity   AlertSeverity
-  entityType String
-  entityId   String
-  message    String
-  tarih      DateTime      @db.Date
-  resolved   Boolean       @default(false)
-  resolvedAt DateTime?
-  createdAt  DateTime      @default(now())
+  id             String        @id @default(cuid())
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  type           String
+  severity       AlertSeverity
+  entityType     String
+  entityId       String
+  message        String
+  tarih          DateTime      @db.Date
+  resolved       Boolean       @default(false)
+  resolvedAt     DateTime?
+  createdAt      DateTime      @default(now())
 
+  @@index([organizationId, tarih, resolved])
   @@index([tarih, resolved])
-}
-
-model BkdsPersonelLog {
-  id             String   @id @default(cuid())
-  tarih          DateTime @db.Date
-  maskedAd       String   // BKDS'den gelen maskeli isim
-  ilkGiris       DateTime
-  sonCikis       DateTime?
-  // Eşleşme sonucu
-  staffId        String?  // eşleştiyse
-  staff          Staff?   @relation(fields: [staffId], references: [id])
-  eslesmeDurumu  String   // tam_eslesme | prefix_eslesme | eslesme_yok
-  tahminEdilenAd String?  // prefix eşleşmesinde tahmin
-  createdAt      DateTime @default(now())
-
-  @@index([tarih])
-  @@index([staffId, tarih])
 }

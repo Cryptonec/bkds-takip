@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { authOptions, getOrgId } from '@/lib/auth';
 import { getLiveAttendance, getLiveStaffAttendance, recalculateAttendance, recalculateStaffAttendance } from '@/lib/services/attendanceService';
 import { getActiveAlerts, generateAlerts } from '@/lib/services/alertService';
 import { getAttendanceStatusInfo } from '@/lib/services/attendanceEngine';
 import { getStaffStatusInfo } from '@/lib/services/staffAttendanceEngine';
-import { bkdsProviderService } from '@/lib/services/bkdsProviderService';
+import { getBkdsService } from '@/lib/services/bkdsProviderService';
 import { prisma } from '@/lib/prisma';
 
-let lastBkdsFetch = 0;
+// Per-org son çekim zamanı
+const lastBkdsFetchMap = new Map<string, number>();
 const BKDS_FETCH_INTERVAL = 5000;
 
 function capitalizeDerslik(str: string): string {
@@ -19,6 +20,7 @@ export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
 
+  const orgId = getOrgId(session);
   const { searchParams } = new URL(req.url);
   const tarihStr = searchParams.get('tarih');
   const tarih = tarihStr ? new Date(tarihStr) : new Date();
@@ -27,26 +29,28 @@ export async function GET(req: NextRequest) {
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
-  const shouldFetch = (now.getTime() - lastBkdsFetch) >= BKDS_FETCH_INTERVAL;
+  const lastFetch = lastBkdsFetchMap.get(orgId) ?? 0;
+  const shouldFetch = (now.getTime() - lastFetch) >= BKDS_FETCH_INTERVAL;
   if (shouldFetch) {
     try {
-      lastBkdsFetch = now.getTime();
-      const records = await bkdsProviderService.fetchToday();
-      await bkdsProviderService.saveAndAggregate(records, tarih);
-      await recalculateAttendance(tarih, now);
-      await recalculateStaffAttendance(tarih, now);
-      await generateAlerts(tarih);
+      lastBkdsFetchMap.set(orgId, now.getTime());
+      const service = getBkdsService(orgId);
+      const records = await service.fetchToday();
+      await service.saveAndAggregate(records, tarih);
+      await recalculateAttendance(tarih, orgId, now);
+      await recalculateStaffAttendance(tarih, orgId, now);
+      await generateAlerts(tarih, orgId);
     } catch (err) {
       console.error('[Attendance API] BKDS hatası:', err);
     }
   }
 
   const [attendances, staffAttendances, alerts, personelLog] = await Promise.all([
-    getLiveAttendance(tarih),
-    getLiveStaffAttendance(tarih),
-    getActiveAlerts(tarih),
+    getLiveAttendance(tarih, orgId),
+    getLiveStaffAttendance(tarih, orgId),
+    getActiveAlerts(tarih, orgId),
     prisma.bkdsPersonelLog.findMany({
-      where: { tarih: dateOnly },
+      where: { organizationId: orgId, tarih: dateOnly },
       include: { staff: { select: { id: true, adSoyad: true } } },
       orderBy: { ilkGiris: 'asc' },
     }),
@@ -148,7 +152,6 @@ export async function GET(req: NextRequest) {
     })),
   ];
 
-  // Tüm personel girişleri (dersi olsun olmasın)
   const tumPersonelGirisler = personelLog.map(log => ({
     staffId: log.staffId ?? log.maskedAd,
     ogretmenAdi: log.staff?.adSoyad ?? log.maskedAd,

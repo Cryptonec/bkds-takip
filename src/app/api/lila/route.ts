@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { authOptions, getOrgId } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { lilaImportService } from '@/lib/services/lilaImportService';
+import { LilaImportService } from '@/lib/services/lilaImportService';
 import type { LilaImportRow } from '@/types';
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
 
+  const orgId = getOrgId(session);
   const formData = await req.formData();
   const file = formData.get('file') as File | null;
 
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest) {
   const buffer = Buffer.from(await file.arrayBuffer());
 
   const job = await prisma.importJob.create({
-    data: { fileName: file.name, status: 'isleniyor' },
+    data: { organizationId: orgId, fileName: file.name, status: 'isleniyor' },
   });
 
   try {
@@ -28,7 +29,8 @@ export async function POST(req: NextRequest) {
       data: { totalRows: rows.length },
     });
 
-    const { success, errors } = await lilaImportService.processRows(rows, job.id);
+    const importService = new LilaImportService(orgId);
+    const { success, errors } = await importService.processRows(rows, job.id);
 
     await prisma.importJob.update({
       where: { id: job.id },
@@ -55,7 +57,10 @@ export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
 
+  const orgId = getOrgId(session);
+
   const jobs = await prisma.importJob.findMany({
+    where: { organizationId: orgId },
     orderBy: { createdAt: 'desc' },
     take: 20,
   });
@@ -63,11 +68,6 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(jobs);
 }
 
-/**
- * Lila XLS dosyasını parse eder.
- * Dosya aslında HTML tablosudur. Sutun sirasi:
- * Sira | Tarih | Saat | Adi Soyadi | Seans | Derslik | Egitimci | Geldi(X) | Gelmedi(X) | Aciklama
- */
 function parseLilaHtmlXls(buffer: Buffer): LilaImportRow[] {
   const content = buffer.toString('utf-8');
   const rowMatches = content.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) ?? [];

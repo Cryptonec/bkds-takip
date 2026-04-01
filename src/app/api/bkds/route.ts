@@ -1,23 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { bkdsProviderService } from '@/lib/services/bkdsProviderService';
+import { authOptions, getOrgId } from '@/lib/auth';
+import { getBkdsService } from '@/lib/services/bkdsProviderService';
 import { recalculateAttendance, recalculateStaffAttendance } from '@/lib/services/attendanceService';
 import { generateAlerts } from '@/lib/services/alertService';
+import { prisma } from '@/lib/prisma';
 
-// Manuel veya otomatik BKDS yenileme
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
 
+  const orgId = getOrgId(session);
   const tarih = new Date();
 
   try {
-    const records = await bkdsProviderService.fetchToday();
-    await bkdsProviderService.saveAndAggregate(records, tarih);
-    await recalculateAttendance(tarih);
-    await recalculateStaffAttendance(tarih);
-    await generateAlerts(tarih);
+    const service = getBkdsService(orgId);
+    const records = await service.fetchToday();
+    await service.saveAndAggregate(records, tarih);
+    await recalculateAttendance(tarih, orgId);
+    await recalculateStaffAttendance(tarih, orgId);
+    await generateAlerts(tarih, orgId);
 
     return NextResponse.json({
       success: true,
@@ -30,26 +32,24 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Son BKDS durumu
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
 
+  const orgId = getOrgId(session);
   const { searchParams } = new URL(req.url);
   const tarihStr = searchParams.get('tarih');
   const tarih = tarihStr ? new Date(tarihStr) : new Date();
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
-  const { prisma } = await import('@/lib/prisma');
-
   const [raw, aggregates] = await Promise.all([
     prisma.bkdsRaw.findMany({
-      where: { tarih: dateOnly },
+      where: { organizationId: orgId, tarih: dateOnly },
       orderBy: { girisZamani: 'asc' },
     }),
     prisma.bkdsAggregate.findMany({
-      where: { tarih: dateOnly },
+      where: { organizationId: orgId, tarih: dateOnly },
       include: { student: { select: { id: true, adSoyad: true } } },
       orderBy: { adSoyad: 'asc' },
     }),
