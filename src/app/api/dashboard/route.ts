@@ -7,7 +7,12 @@ export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
 
-  const orgId = await getOrgId(session);
+  let orgId: string;
+  try {
+    orgId = await getOrgId(session);
+  } catch {
+    return NextResponse.json({ error: 'DB migration gerekli: npm run db:push && npm run db:seed' }, { status: 503 });
+  }
   const { searchParams } = new URL(req.url);
   const tarihStr = searchParams.get('tarih');
   const tarih = tarihStr ? new Date(tarihStr) : new Date();

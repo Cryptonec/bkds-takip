@@ -33,10 +33,16 @@ export default function DashboardPage() {
 
   async function loadStats() {
     setLoading(true);
-    const res = await fetch('/api/dashboard');
-    const data = await res.json();
-    setStats(data);
-    setLoading(false);
+    try {
+      const res = await fetch('/api/dashboard');
+      if (!res.ok) { setLoading(false); return; }
+      const data = await res.json();
+      setStats(data);
+    } catch {
+      // API henüz hazır değil (DB migration bekleniyor)
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function triggerBkds() {
