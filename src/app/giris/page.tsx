@@ -1,15 +1,34 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Activity, Loader2 } from 'lucide-react';
 
-export default function GirisPage() {
+function GirisForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // SSO token ile otomatik giriş
+  useEffect(() => {
+    const token = searchParams.get('token');
+    if (!token) return;
+
+    setLoading(true);
+    signIn('credentials', { ssoToken: token, redirect: false }).then((result) => {
+      if (result?.error) {
+        setError('SSO bağlantısı geçersiz veya süresi dolmuş. Lütfen tekrar deneyin.');
+        setLoading(false);
+        // URL'den token'ı temizle
+        router.replace('/giris');
+      } else {
+        router.push('/dashboard');
+      }
+    });
+  }, [searchParams, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -41,53 +60,61 @@ export default function GirisPage() {
           <p className="text-sm text-gray-500 mt-1">Özel Eğitim Rehabilitasyon Merkezi</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">E-posta</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="kullanici@kurum.com"
-            />
+        {loading ? (
+          <div className="flex flex-col items-center gap-3 py-8 text-gray-500">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <p className="text-sm">Giriş yapılıyor...</p>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Şifre</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="••••••••"
-            />
-          </div>
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">
-              {error}
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">E-posta</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="kullanici@kurum.com"
+              />
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Giriş yapılıyor...
-              </>
-            ) : (
-              'Giriş Yap'
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Şifre</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="••••••••"
+              />
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">
+                {error}
+              </div>
             )}
-          </button>
-        </form>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              Giriş Yap
+            </button>
+          </form>
+        )}
       </div>
     </div>
+  );
+}
+
+export default function GirisPage() {
+  return (
+    <Suspense>
+      <GirisForm />
+    </Suspense>
   );
 }

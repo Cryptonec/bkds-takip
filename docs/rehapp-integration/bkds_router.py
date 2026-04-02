@@ -1,27 +1,25 @@
 """
-bkds_router.py — Rehapp FastAPI router (Rehapp-spesifik implementasyon)
+bkds_router.py — Rehapp FastAPI router
 
-Mimari:
-  Rehapp'ta kullanıcı = Kurum. Her kurum kendi JWT token'ıyla giriş yapar.
-  get_current_kurum dependency JWT'den kurum_id okur.
-
-Kurulum (rehapp-backend/main.py veya app/routers/__init__.py):
+Kurulum (rehapp-backend/main.py):
     from routers.bkds import router as bkds_router
     app.include_router(bkds_router, prefix="/bkds", tags=["BKDS"])
 
 Gerekli ortam değişkenleri (.env):
     BKDS_APP_URL    = "https://bkds.rehapp.com"
     BKDS_SSO_SECRET = "<bkds-takip SSO_SECRET ile aynı değer>"
+
+bkds-takip'te her kurum için gerekli:
+    - Organization.slug = str(rehapp kurum_id)
+    - Kurumun bir admin User kaydı (email + password)
+    - Bu email+password Rehapp'ta kurumun profilinde saklanacak
 """
 
 import os
 from fastapi import APIRouter, Depends, HTTPException
 import httpx
 
-# Rehapp'ın mevcut auth dependency'si
 from auth import get_current_kurum          # rehapp-backend/auth.py
-from db import get_db                       # gerekirse
-from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -29,55 +27,63 @@ BKDS_APP_URL    = os.getenv("BKDS_APP_URL",    "https://bkds.rehapp.com")
 BKDS_SSO_SECRET = os.getenv("BKDS_SSO_SECRET", "")
 
 
-def _org_slug(kurum) -> str:
-    """
-    Rehapp kurum_id → bkds-takip Organization.slug
-
-    Rehapp'ta Kurum.id (integer) kullanılıyor.
-    bkds-takip'te kurum oluştururken slug = str(rehapp_kurum_id) set edilmeli.
-    Örnek: Rehapp kurum_id=42 → bkds-takip slug="42"
-    """
-    return str(kurum.id)
-
-
 @router.get(
     "/sso-url",
     summary="BKDS Takip SSO URL'i üret",
-    description=(
-        "Streamlit frontend'i bu endpoint'i çağırır. "
-        "Tek kullanımlık (2 dk geçerli) bir redirect URL döner. "
-        "Streamlit bu URL'i link olarak gösterir."
-    ),
 )
 async def get_bkds_sso_url(kurum=Depends(get_current_kurum)):
     """
-    Kurum için bkds-takip'ten SSO token alır ve redirect URL döner.
-    Streamlit Authorization header ile bu endpoint'i çağırır.
+    Kurum için bkds-takip'ten tek kullanımlık giriş URL'i alır.
+    Streamlit bu endpoint'i Authorization header ile çağırır (server-side).
+    Dönüş: { redirect_url: "https://bkds.rehapp.com/giris?token=xyz" }
+
+    Kurum modelinde şu alanlar gerekli:
+        kurum.bkds_email     # bkds-takip'teki admin kullanıcı e-postası
+        kurum.bkds_password  # bkds-takip'teki admin kullanıcı şifresi (düz metin veya decrypt)
+
+    TODO: Rehapp'ta kurum.bkds_email ve kurum.bkds_password alanları yoksa
+          onları Kurum modeline ekle (şifreli saklama önerilir).
     """
     if not BKDS_SSO_SECRET:
         raise HTTPException(status_code=500, detail="BKDS_SSO_SECRET tanımlı değil")
 
-    org_slug = _org_slug(kurum)
+    # Kurum modelinden BKDS kimlik bilgilerini al
+    # TODO: alan adlarını kendi Kurum modeline göre güncelle
+    bkds_email    = getattr(kurum, "bkds_email", None)
+    bkds_password = getattr(kurum, "bkds_password", None)
+    org_slug      = str(kurum.id)   # bkds-takip'te Organization.slug = str(kurum.id)
+
+    if not bkds_email or not bkds_password:
+        raise HTTPException(
+            status_code=422,
+            detail="Kurumun BKDS giriş bilgileri tanımlı değil. Lütfen kurum ayarlarını güncelleyin.",
+        )
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             resp = await client.post(
-                f"{BKDS_APP_URL}/api/sso",
+                f"{BKDS_APP_URL}/api/sso/rehapp",
                 json={
+                    "email": bkds_email,
+                    "password": bkds_password,
                     "org_slug": org_slug,
-                    "role": "admin",        # Rehapp'ta tek rol: kurum admini
-                    "secret": BKDS_SSO_SECRET,
+                    "rehapp_secret": BKDS_SSO_SECRET,
                 },
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            detail = "BKDS'e erişim reddedildi"
-            if exc.response.status_code == 404:
-                detail = (
-                    f"Kurum '{org_slug}' bkds-takip'te bulunamadı. "
-                    "Superadmin panelden organizasyon oluşturun."
+            status = exc.response.status_code
+            if status == 404:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Kurum '{org_slug}' bkds-takip'te bulunamadı. Superadmin'e bildirin.",
                 )
-            raise HTTPException(status_code=502, detail=detail)
+            if status == 401:
+                raise HTTPException(
+                    status_code=502,
+                    detail="BKDS kimlik bilgileri geçersiz. Kurum ayarlarını kontrol edin.",
+                )
+            raise HTTPException(status_code=502, detail=f"BKDS hatası: {status}")
         except httpx.RequestError:
             raise HTTPException(status_code=503, detail="BKDS uygulamasına bağlanılamadı")
 
@@ -86,4 +92,4 @@ async def get_bkds_sso_url(kurum=Depends(get_current_kurum)):
     if not redirect_url:
         raise HTTPException(status_code=502, detail="BKDS'den geçersiz yanıt")
 
-    return {"redirect_url": redirect_url, "org_slug": org_slug}
+    return {"redirect_url": redirect_url}
