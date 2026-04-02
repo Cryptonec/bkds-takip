@@ -1,10 +1,37 @@
-import { bkdsProviderService } from './bkdsProviderService';
+import { BkdsProviderService } from './bkdsProviderService';
 import { recalculateAttendance, recalculateStaffAttendance } from './attendanceService';
 import { generateAlerts } from './alertService';
+import { prisma } from '@/lib/prisma';
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 let isRunning = false;
 
+/**
+ * Tek bir kurum için BKDS poll döngüsü çalıştır.
+ */
+export async function runBkdsPollForOrg(organizationId: string): Promise<void> {
+  const tarih = new Date();
+  console.log(`[BKDS Poll] Org ${organizationId} başlatıldı: ${tarih.toISOString()}`);
+
+  try {
+    const service = await BkdsProviderService.forOrganization(organizationId);
+    const records = await service.fetchToday();
+    console.log(`[BKDS Poll] Org ${organizationId}: ${records.length} kayıt çekildi`);
+
+    await service.saveAndAggregate(records, tarih);
+    await recalculateAttendance(tarih, organizationId);
+    await recalculateStaffAttendance(tarih, organizationId);
+    await generateAlerts(tarih, organizationId);
+
+    console.log(`[BKDS Poll] Org ${organizationId} tamamlandı: ${new Date().toISOString()}`);
+  } catch (err) {
+    console.error(`[BKDS Poll] Org ${organizationId} hata:`, err);
+  }
+}
+
+/**
+ * Tüm aktif kurumlar için poll döngüsü.
+ */
 export async function runBkdsPoll(): Promise<void> {
   if (isRunning) {
     console.log('[BKDS Poll] Önceki çalışma devam ediyor, atlıyor...');
@@ -12,27 +39,18 @@ export async function runBkdsPoll(): Promise<void> {
   }
 
   isRunning = true;
-  const tarih = new Date();
-  console.log(`[BKDS Poll] Başlatıldı: ${tarih.toISOString()}`);
-
   try {
-    // 1. BKDS'den veri çek
-    const records = await bkdsProviderService.fetchToday();
-    console.log(`[BKDS Poll] ${records.length} kayıt çekildi`);
+    const orgs = await prisma.organization.findMany({
+      where: { active: true },
+      include: { credentials: true },
+    });
 
-    // 2. DB'ye kaydet ve aggregate et
-    await bkdsProviderService.saveAndAggregate(records, tarih);
+    const activeOrgs = orgs.filter(o => o.credentials !== null);
+    console.log(`[BKDS Poll] ${activeOrgs.length} aktif kurum için poll başlatıldı`);
 
-    // 3. Attendance yeniden hesapla
-    await recalculateAttendance(tarih);
-    await recalculateStaffAttendance(tarih);
-
-    // 4. Alert üret
-    await generateAlerts(tarih);
-
-    console.log(`[BKDS Poll] Tamamlandı: ${new Date().toISOString()}`);
+    await Promise.allSettled(activeOrgs.map(o => runBkdsPollForOrg(o.id)));
   } catch (err) {
-    console.error('[BKDS Poll] Hata:', err);
+    console.error('[BKDS Poll] Genel hata:', err);
   } finally {
     isRunning = false;
   }
@@ -41,15 +59,10 @@ export async function runBkdsPoll(): Promise<void> {
 export function startPolling(intervalMs?: number): void {
   const interval = intervalMs ?? Number(process.env.BKDS_POLL_INTERVAL ?? '60000');
 
-  if (pollInterval) {
-    clearInterval(pollInterval);
-  }
+  if (pollInterval) clearInterval(pollInterval);
 
   console.log(`[BKDS Poll] Polling başlatıldı (${interval}ms aralık)`);
-
-  // Hemen bir kez çalıştır
   runBkdsPoll();
-
   pollInterval = setInterval(runBkdsPoll, interval);
 }
 

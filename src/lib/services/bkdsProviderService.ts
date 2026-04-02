@@ -23,17 +23,44 @@ export class BkdsProviderService {
   private cityId: string;
   private districtId: string;
   private remId: string;
+  private organizationId: string | null;
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
   private tokenExpiry: number = 0;
 
-  constructor() {
-    this.apiUrl = process.env.BKDS_API_URL ?? 'https://bkds-api.meb.gov.tr';
-    this.username = process.env.BKDS_USERNAME ?? '';
-    this.password = process.env.BKDS_PASSWORD ?? '';
-    this.cityId = process.env.BKDS_CITY_ID ?? '';
-    this.districtId = process.env.BKDS_DISTRICT_ID ?? '';
-    this.remId = process.env.BKDS_REM_ID ?? '';
+  constructor(opts?: {
+    organizationId?: string;
+    apiUrl?: string;
+    username?: string;
+    password?: string;
+    cityId?: string;
+    districtId?: string;
+    remId?: string;
+  }) {
+    this.organizationId = opts?.organizationId ?? null;
+    this.apiUrl = opts?.apiUrl ?? process.env.BKDS_API_URL ?? 'https://bkds-api.meb.gov.tr';
+    this.username = opts?.username ?? process.env.BKDS_USERNAME ?? '';
+    this.password = opts?.password ?? process.env.BKDS_PASSWORD ?? '';
+    this.cityId = opts?.cityId ?? process.env.BKDS_CITY_ID ?? '';
+    this.districtId = opts?.districtId ?? process.env.BKDS_DISTRICT_ID ?? '';
+    this.remId = opts?.remId ?? process.env.BKDS_REM_ID ?? '';
+  }
+
+  /**
+   * Organizasyonun DB'deki kimlik bilgileriyle yeni bir instance oluşturur.
+   */
+  static async forOrganization(organizationId: string): Promise<BkdsProviderService> {
+    const cred = await prisma.bkdsCredential.findUnique({ where: { organizationId } });
+    if (!cred) throw new Error(`Kurum (${organizationId}) için BKDS kimlik bilgisi bulunamadı`);
+    return new BkdsProviderService({
+      organizationId,
+      apiUrl: cred.apiUrl,
+      username: cred.username,
+      password: cred.password,
+      cityId: cred.cityId,
+      districtId: cred.districtId,
+      remId: cred.remId,
+    });
   }
 
   private async login(): Promise<void> {
@@ -104,19 +131,23 @@ export class BkdsProviderService {
       page++;
     }
 
-    console.log(`[BKDS] ${allResults.length} toplam kayıt`);
+    console.log(`[BKDS] ${allResults.length} toplam kayıt (org: ${this.organizationId ?? 'env'})`);
     return allResults;
   }
 
   async saveAndAggregate(records: BkdsApiRecord[], tarih: Date): Promise<void> {
+    const orgId = this.organizationId;
+    if (!orgId) throw new Error('saveAndAggregate için organizationId gerekli');
+
     const dateOnly = new Date(tarih);
     dateOnly.setHours(0, 0, 0, 0);
 
     // Ham verileri kaydet
-    await prisma.bkdsRaw.deleteMany({ where: { tarih: dateOnly } });
+    await prisma.bkdsRaw.deleteMany({ where: { tarih: dateOnly, organizationId: orgId } });
     if (records.length > 0) {
       await prisma.bkdsRaw.createMany({
         data: records.map(r => ({
+          organizationId: orgId,
           tarih: dateOnly,
           adSoyad: r.individual_full_name,
           maskedTc: r.individual_identity_number ?? null,
@@ -130,8 +161,8 @@ export class BkdsProviderService {
     const personelRecords = records.filter(r => r.individual_type === 2);
 
     const [allStudents, allStaff] = await Promise.all([
-      prisma.student.findMany({ where: { aktif: true } }),
-      prisma.staff.findMany({ where: { aktif: true } }),
+      prisma.student.findMany({ where: { aktif: true, organizationId: orgId } }),
+      prisma.staff.findMany({ where: { aktif: true, organizationId: orgId } }),
     ]);
 
     // --- Öğrenci aggregate ---
@@ -148,8 +179,8 @@ export class BkdsProviderService {
       const student = allStudents.find(s => matchMaskedName(maskedName, s.adSoyad));
       if (student) {
         await prisma.bkdsAggregate.upsert({
-          where: { studentId_tarih: { studentId: student.id, tarih: dateOnly } },
-          create: { studentId: student.id, tarih: dateOnly, adSoyad: maskedName, ilkGiris, sonCikis },
+          where: { studentId_tarih_organizationId: { studentId: student.id, tarih: dateOnly, organizationId: orgId } },
+          create: { organizationId: orgId, studentId: student.id, tarih: dateOnly, adSoyad: maskedName, ilkGiris, sonCikis },
           update: { adSoyad: maskedName, ilkGiris, sonCikis },
         });
       }
@@ -163,15 +194,13 @@ export class BkdsProviderService {
       personelMap.set(r.individual_full_name, ex);
     }
 
-    // Önceki log kayıtlarını temizle
-    await prisma.bkdsPersonelLog.deleteMany({ where: { tarih: dateOnly } });
+    await prisma.bkdsPersonelLog.deleteMany({ where: { tarih: dateOnly, organizationId: orgId } });
 
     for (const [maskedName, recs] of personelMap.entries()) {
       const ilkGiris = new Date(Math.min(...recs.map(r => new Date(r.first_entry).getTime())));
       const cikislar = recs.filter(r => r.last_exit).map(r => new Date(r.last_exit!).getTime());
       const sonCikis = cikislar.length > 0 ? new Date(Math.max(...cikislar)) : null;
 
-      // 1. Önce tam eşleştirme dene
       let matchedStaff = allStaff.find(s => matchMaskedName(maskedName, s.adSoyad));
       let eslesmeTipi: 'tam_eslesme' | 'prefix_eslesme' | 'eslesme_yok' = 'eslesme_yok';
       let tahminEdilenAd: string | undefined;
@@ -179,34 +208,25 @@ export class BkdsProviderService {
       if (matchedStaff) {
         eslesmeTipi = 'tam_eslesme';
       } else {
-        // 2. Prefix eşleştirme (soyisim değişikliği)
         const prefixMatches = allStaff
           .map(s => ({ staff: s, result: matchMaskedNameFuzzy(maskedName, s.adSoyad) }))
           .filter(x => x.result.type === 'prefix_eslesme')
           .sort((a, b) => b.result.score - a.result.score);
 
         if (prefixMatches.length === 1) {
-          // Tek aday varsa güvenle eşleştir
           matchedStaff = prefixMatches[0].staff;
           eslesmeTipi = 'prefix_eslesme';
           tahminEdilenAd = prefixMatches[0].staff.adSoyad;
-          console.log(`[BKDS] Soyisim değişikliği tahmini: "${maskedName}" → "${matchedStaff.adSoyad}"`);
         } else if (prefixMatches.length > 1) {
-          // Birden fazla aday — en uzun prefix eşleşeni al
           matchedStaff = prefixMatches[0].staff;
           eslesmeTipi = 'prefix_eslesme';
           tahminEdilenAd = prefixMatches.map(x => x.staff.adSoyad).join(' / ');
-          console.log(`[BKDS] Çoklu prefix eşleşme: "${maskedName}" → ${tahminEdilenAd}`);
-        } else {
-          // 3. Hiç eşleşme yok — o gün dersi olmayan veya tamamen yeni personel
-          eslesmeTipi = 'eslesme_yok';
-          console.log(`[BKDS] Eşleşme yok (dersi olmayan/yeni personel): "${maskedName}"`);
         }
       }
 
-      // Log kaydı oluştur (tüm senaryolar için)
       await prisma.bkdsPersonelLog.create({
         data: {
+          organizationId: orgId,
           tarih: dateOnly,
           maskedAd: maskedName,
           ilkGiris,
@@ -217,30 +237,21 @@ export class BkdsProviderService {
         },
       });
 
-      // Eşleşen personelin StaffSession'larını güncelle
       if (matchedStaff) {
         const sessions = await prisma.staffSession.findMany({
-          where: { staffId: matchedStaff.id, tarih: dateOnly },
+          where: { staffId: matchedStaff.id, tarih: dateOnly, organizationId: orgId },
         });
 
-        if (sessions.length > 0) {
-          for (const session of sessions) {
-            await prisma.staffSession.update({
-              where: { id: session.id },
-              data: {
-                basladiMi: true,
-                baslamaZamani: ilkGiris,
-                sonCikisZamani: sonCikis,
-              },
-            });
-          }
-        } else {
-          // O gün dersi yok ama BKDS'de var — log yeterli, StaffSession oluşturma
-          console.log(`[BKDS] ${matchedStaff.adSoyad} bugün dersi yok ama kuruma gelmiş`);
+        for (const session of sessions) {
+          await prisma.staffSession.update({
+            where: { id: session.id },
+            data: { basladiMi: true, baslamaZamani: ilkGiris, sonCikisZamani: sonCikis },
+          });
         }
       }
     }
   }
 }
 
+// Geriye dönük uyumluluk için tek kurum env-tabanlı instance
 export const bkdsProviderService = new BkdsProviderService();

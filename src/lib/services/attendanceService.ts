@@ -2,29 +2,23 @@ import { prisma } from '@/lib/prisma';
 import { calculateAttendanceStatus } from './attendanceEngine';
 import { calculateStaffStatus } from './staffAttendanceEngine';
 
-/**
- * Belirtilen tarih için tüm attendance kayıtlarını güncelle
- */
-export async function recalculateAttendance(tarih: Date, now: Date = new Date()): Promise<void> {
+export async function recalculateAttendance(
+  tarih: Date,
+  organizationId: string,
+  now: Date = new Date(),
+): Promise<void> {
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
-  // Tüm ders oturumlarını çek
   const lessons = await prisma.lessonSession.findMany({
-    where: { tarih: dateOnly },
-    include: {
-      student: true,
-    },
+    where: { tarih: dateOnly, organizationId },
+    include: { student: true },
   });
 
   for (const lesson of lessons) {
-    // BKDS aggregate verisini çek
     const bkds = lesson.studentId
       ? await prisma.bkdsAggregate.findFirst({
-          where: {
-            studentId: lesson.studentId,
-            tarih: dateOnly,
-          },
+          where: { studentId: lesson.studentId, tarih: dateOnly, organizationId },
         })
       : null;
 
@@ -42,6 +36,7 @@ export async function recalculateAttendance(tarih: Date, now: Date = new Date())
     await prisma.attendance.upsert({
       where: { lessonSessionId: lesson.id },
       create: {
+        organizationId,
         lessonSessionId: lesson.id,
         studentId: lesson.studentId,
         tarih: dateOnly,
@@ -60,15 +55,16 @@ export async function recalculateAttendance(tarih: Date, now: Date = new Date())
   }
 }
 
-/**
- * Personel attendance hesapla
- */
-export async function recalculateStaffAttendance(tarih: Date, now: Date = new Date()): Promise<void> {
+export async function recalculateStaffAttendance(
+  tarih: Date,
+  organizationId: string,
+  now: Date = new Date(),
+): Promise<void> {
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
   const staffSessions = await prisma.staffSession.findMany({
-    where: { tarih: dateOnly },
+    where: { tarih: dateOnly, organizationId },
     include: { staff: true },
   });
 
@@ -86,6 +82,7 @@ export async function recalculateStaffAttendance(tarih: Date, now: Date = new Da
     await prisma.staffAttendance.upsert({
       where: { staffSessionId: session.id },
       create: {
+        organizationId,
         staffSessionId: session.id,
         staffId: session.staffId,
         tarih: dateOnly,
@@ -96,34 +93,26 @@ export async function recalculateStaffAttendance(tarih: Date, now: Date = new Da
   }
 }
 
-/**
- * Canlı takip verisi - öğrenci
- */
-export async function getLiveAttendance(tarih: Date) {
+export async function getLiveAttendance(tarih: Date, organizationId: string) {
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
   return prisma.attendance.findMany({
-    where: { tarih: dateOnly },
+    where: { tarih: dateOnly, organizationId },
     include: {
-      lessonSession: {
-        include: { staff: true },
-      },
+      lessonSession: { include: { staff: true } },
       student: true,
     },
     orderBy: [{ lessonSession: { baslangic: 'asc' } }],
   });
 }
 
-/**
- * Canlı takip verisi - personel
- */
-export async function getLiveStaffAttendance(tarih: Date) {
+export async function getLiveStaffAttendance(tarih: Date, organizationId: string) {
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
   return prisma.staffAttendance.findMany({
-    where: { tarih: dateOnly },
+    where: { tarih: dateOnly, organizationId },
     include: {
       staffSession: true,
       staff: true,

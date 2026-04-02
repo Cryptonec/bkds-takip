@@ -39,16 +39,13 @@ function getStaffAlertDef(status: StaffAttendanceStatus): AlertDef | null {
   }
 }
 
-/**
- * Bugünün attendance verilerinden alert üret
- */
-export async function generateAlerts(tarih: Date): Promise<void> {
+export async function generateAlerts(tarih: Date, organizationId: string): Promise<void> {
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
   // Öğrenci alertleri
   const attendances = await prisma.attendance.findMany({
-    where: { tarih: dateOnly },
+    where: { tarih: dateOnly, organizationId },
   });
 
   for (const att of attendances) {
@@ -56,17 +53,13 @@ export async function generateAlerts(tarih: Date): Promise<void> {
     if (!def) continue;
 
     const existing = await prisma.alert.findFirst({
-      where: {
-        entityType: 'attendance',
-        entityId: att.id,
-        type: def.type,
-        resolved: false,
-      },
+      where: { organizationId, entityType: 'attendance', entityId: att.id, type: def.type, resolved: false },
     });
 
     if (!existing) {
       await prisma.alert.create({
         data: {
+          organizationId,
           type: def.type,
           severity: def.severity,
           entityType: 'attendance',
@@ -77,14 +70,9 @@ export async function generateAlerts(tarih: Date): Promise<void> {
       });
     }
 
-    // Çözümlenen durumları kapat
     if (['tamamlandi', 'bkds_muaf', 'giris_tamam'].includes(att.status)) {
       await prisma.alert.updateMany({
-        where: {
-          entityType: 'attendance',
-          entityId: att.id,
-          resolved: false,
-        },
+        where: { organizationId, entityType: 'attendance', entityId: att.id, resolved: false },
         data: { resolved: true, resolvedAt: new Date() },
       });
     }
@@ -92,7 +80,7 @@ export async function generateAlerts(tarih: Date): Promise<void> {
 
   // Personel alertleri
   const staffAttendances = await prisma.staffAttendance.findMany({
-    where: { tarih: dateOnly },
+    where: { tarih: dateOnly, organizationId },
   });
 
   for (const sa of staffAttendances) {
@@ -100,17 +88,13 @@ export async function generateAlerts(tarih: Date): Promise<void> {
     if (!def) continue;
 
     const existing = await prisma.alert.findFirst({
-      where: {
-        entityType: 'staffAttendance',
-        entityId: sa.id,
-        type: def.type,
-        resolved: false,
-      },
+      where: { organizationId, entityType: 'staffAttendance', entityId: sa.id, type: def.type, resolved: false },
     });
 
     if (!existing) {
       await prisma.alert.create({
         data: {
+          organizationId,
           type: def.type,
           severity: def.severity,
           entityType: 'staffAttendance',
@@ -123,23 +107,19 @@ export async function generateAlerts(tarih: Date): Promise<void> {
 
     if (sa.status === 'derste') {
       await prisma.alert.updateMany({
-        where: {
-          entityType: 'staffAttendance',
-          entityId: sa.id,
-          resolved: false,
-        },
+        where: { organizationId, entityType: 'staffAttendance', entityId: sa.id, resolved: false },
         data: { resolved: true, resolvedAt: new Date() },
       });
     }
   }
 }
 
-export async function getActiveAlerts(tarih: Date) {
+export async function getActiveAlerts(tarih: Date, organizationId: string) {
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
   return prisma.alert.findMany({
-    where: { tarih: dateOnly, resolved: false },
+    where: { tarih: dateOnly, resolved: false, organizationId },
     orderBy: [{ severity: 'desc' }, { createdAt: 'desc' }],
   });
 }

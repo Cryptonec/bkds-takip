@@ -8,6 +8,7 @@ datasource db {
 }
 
 enum Role {
+  superadmin
   admin
   yonetici
   danisma
@@ -48,208 +49,321 @@ enum ImportStatus {
   hata
 }
 
+enum SubscriptionPlan {
+  trial
+  basic
+  pro
+}
+
+// ─── Multi-tenant modeller ───────────────────────────────────────────────────
+
+model Organization {
+  id          String           @id @default(cuid())
+  name        String
+  slug        String           @unique  // Rehapp org_slug ile eşleşmeli
+  active      Boolean          @default(true)
+  plan        SubscriptionPlan @default(trial)
+  trialEndsAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  users        User[]
+  credentials  BkdsCredential[]
+  ssoTokens    SsoToken[]
+  students     Student[]
+  staff        Staff[]
+  lessonSessions LessonSession[]
+  staffSessions  StaffSession[]
+  bkdsRaw      BkdsRaw[]
+  bkdsAggregates BkdsAggregate[]
+  attendances  Attendance[]
+  staffAttendances StaffAttendance[]
+  importJobs   ImportJob[]
+  alerts       Alert[]
+  bkdsPersonelLogs BkdsPersonelLog[]
+  systemSettings   SystemSetting[]
+  actionLogs   ActionLog[]
+}
+
+model BkdsCredential {
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String       @unique
+  username       String
+  password       String       // encrypt edilmeli prod'da
+  cityId         String
+  districtId     String
+  remId          String
+  apiUrl         String       @default("https://bkds-api.meb.gov.tr")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model SsoToken {
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  token          String       @unique
+  role           Role         @default(admin)
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([token])
+  @@index([organizationId])
+}
+
+// ─── Kullanıcı ───────────────────────────────────────────────────────────────
+
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String
-  password  String
-  role      Role     @default(danisma)
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String       @id @default(cuid())
+  email          String       @unique
+  name           String
+  password       String
+  role           Role         @default(danisma)
+  active         Boolean      @default(true)
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  organizationId String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   actionLogs ActionLog[]
 }
 
+// ─── Öğrenci & Personel ──────────────────────────────────────────────────────
+
 model Student {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
   adSoyad        String
-  ogrenciNo      String?  @unique
+  ogrenciNo      String?
   tc             String?
   normalizedName String
-  aktif          Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  aktif          Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   lessonSessions LessonSession[]
   attendances    Attendance[]
   bkdsAggregates BkdsAggregate[]
+
+  @@unique([ogrenciNo, organizationId])
+  @@index([organizationId])
 }
 
 model Staff {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
   adSoyad        String
   normalizedName String
-  aktif          Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  aktif          Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  lessonSessions  LessonSession[]
-  staffSessions   StaffSession[]
+  lessonSessions   LessonSession[]
+  staffSessions    StaffSession[]
   staffAttendances StaffAttendance[]
-  bkdsLogs       BkdsPersonelLog[]
+  bkdsLogs         BkdsPersonelLog[]
+
+  @@index([organizationId])
 }
 
 model LessonSession {
-  id           String   @id @default(cuid())
-  student      Student  @relation(fields: [studentId], references: [id])
-  studentId    String
-  staff        Staff    @relation(fields: [staffId], references: [id])
-  staffId      String
-  tarih        DateTime @db.Date
-  baslangic    DateTime
-  bitis        DateTime
-  derslik      String
-  bkdsRequired Boolean  @default(true)
-  importJobId  String?
-  createdAt    DateTime @default(now())
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  student        Student      @relation(fields: [studentId], references: [id])
+  studentId      String
+  staff          Staff        @relation(fields: [staffId], references: [id])
+  staffId        String
+  tarih          DateTime     @db.Date
+  baslangic      DateTime
+  bitis          DateTime
+  derslik        String
+  bkdsRequired   Boolean      @default(true)
+  importJobId    String?
+  createdAt      DateTime     @default(now())
 
   attendance   Attendance?
-  importJob    ImportJob?  @relation(fields: [importJobId], references: [id])
+  importJob    ImportJob?   @relation(fields: [importJobId], references: [id])
 
   @@index([tarih])
   @@index([studentId, tarih])
+  @@index([organizationId, tarih])
 }
 
 model StaffSession {
-  id          String   @id @default(cuid())
-  staff       Staff    @relation(fields: [staffId], references: [id])
-  staffId     String
-  tarih       DateTime @db.Date
-  baslangic   DateTime
-  bitis       DateTime
-  derslik     String
-  basladiMi   Boolean  @default(false)
-  baslamaZamani DateTime?
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  staff          Staff        @relation(fields: [staffId], references: [id])
+  staffId        String
+  tarih          DateTime     @db.Date
+  baslangic      DateTime
+  bitis          DateTime
+  derslik        String
+  basladiMi      Boolean      @default(false)
+  baslamaZamani  DateTime?
   sonCikisZamani DateTime?
-  createdAt   DateTime @default(now())
+  createdAt      DateTime     @default(now())
 
   staffAttendance StaffAttendance?
 
   @@index([tarih])
   @@index([staffId, tarih])
+  @@index([organizationId, tarih])
 }
 
 model BkdsRaw {
-  id          String   @id @default(cuid())
-  tarih       DateTime @db.Date
-  adSoyad     String
-  maskedTc    String?
-  girisZamani DateTime
-  cikisZamani DateTime?
-  fetchedAt   DateTime @default(now())
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  tarih          DateTime     @db.Date
+  adSoyad        String
+  maskedTc       String?
+  girisZamani    DateTime
+  cikisZamani    DateTime?
+  fetchedAt      DateTime     @default(now())
 
   @@index([tarih])
   @@index([adSoyad, tarih])
+  @@index([organizationId, tarih])
 }
 
 model BkdsAggregate {
-  id          String   @id @default(cuid())
-  student     Student? @relation(fields: [studentId], references: [id])
-  studentId   String?
-  tarih       DateTime @db.Date
-  adSoyad     String
-  ilkGiris    DateTime
-  sonCikis    DateTime?
-  fetchedAt   DateTime @default(now())
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  student        Student?     @relation(fields: [studentId], references: [id])
+  studentId      String?
+  tarih          DateTime     @db.Date
+  adSoyad        String
+  ilkGiris       DateTime
+  sonCikis       DateTime?
+  fetchedAt      DateTime     @default(now())
 
-  @@unique([studentId, tarih])
+  @@unique([studentId, tarih, organizationId])
   @@index([tarih])
+  @@index([organizationId, tarih])
 }
 
 model Attendance {
-  id            String           @id @default(cuid())
-  lessonSession LessonSession    @relation(fields: [lessonSessionId], references: [id])
-  lessonSessionId String         @unique
-  student       Student          @relation(fields: [studentId], references: [id])
-  studentId     String
-  tarih         DateTime         @db.Date
-  status        AttendanceStatus @default(bekleniyor)
-  girisZamani   DateTime?
-  cikisZamani   DateTime?
-  gercekGiris   DateTime?
-  gercekCikis   DateTime?
-  updatedAt     DateTime         @updatedAt
+  id              String           @id @default(cuid())
+  organization    Organization     @relation(fields: [organizationId], references: [id])
+  organizationId  String
+  lessonSession   LessonSession    @relation(fields: [lessonSessionId], references: [id])
+  lessonSessionId String           @unique
+  student         Student          @relation(fields: [studentId], references: [id])
+  studentId       String
+  tarih           DateTime         @db.Date
+  status          AttendanceStatus @default(bekleniyor)
+  girisZamani     DateTime?
+  cikisZamani     DateTime?
+  gercekGiris     DateTime?
+  gercekCikis     DateTime?
+  updatedAt       DateTime         @updatedAt
 
   @@index([tarih])
   @@index([studentId, tarih])
+  @@index([organizationId, tarih])
 }
 
 model StaffAttendance {
-  id             String               @id @default(cuid())
-  staffSession   StaffSession         @relation(fields: [staffSessionId], references: [id])
-  staffSessionId String               @unique
-  staff          Staff                @relation(fields: [staffId], references: [id])
+  id             String                @id @default(cuid())
+  organization   Organization          @relation(fields: [organizationId], references: [id])
+  organizationId String
+  staffSession   StaffSession          @relation(fields: [staffSessionId], references: [id])
+  staffSessionId String                @unique
+  staff          Staff                 @relation(fields: [staffId], references: [id])
   staffId        String
-  tarih          DateTime             @db.Date
+  tarih          DateTime              @db.Date
   status         StaffAttendanceStatus @default(bekleniyor)
-  updatedAt      DateTime             @updatedAt
+  updatedAt      DateTime              @updatedAt
 
   @@index([tarih])
+  @@index([organizationId, tarih])
 }
 
 model ImportJob {
-  id           String       @id @default(cuid())
-  fileName     String
-  status       ImportStatus @default(bekliyor)
-  totalRows    Int          @default(0)
-  processedRows Int         @default(0)
-  errorRows    Int          @default(0)
-  errorDetails Json?
-  createdAt    DateTime     @default(now())
-  completedAt  DateTime?
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  fileName       String
+  status         ImportStatus @default(bekliyor)
+  totalRows      Int          @default(0)
+  processedRows  Int          @default(0)
+  errorRows      Int          @default(0)
+  errorDetails   Json?
+  createdAt      DateTime     @default(now())
+  completedAt    DateTime?
 
   lessonSessions LessonSession[]
+
+  @@index([organizationId])
 }
 
 model SystemSetting {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  value     String
-  updatedAt DateTime @updatedAt
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  key            String
+  value          String
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, key])
 }
 
 model ActionLog {
-  id        String   @id @default(cuid())
-  user      User?    @relation(fields: [userId], references: [id])
-  userId    String?
-  action    String
-  entity    String?
-  entityId  String?
-  details   Json?
-  createdAt DateTime @default(now())
+  id             String       @id @default(cuid())
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  organizationId String?
+  user           User?        @relation(fields: [userId], references: [id])
+  userId         String?
+  action         String
+  entity         String?
+  entityId       String?
+  details        Json?
+  createdAt      DateTime     @default(now())
 
   @@index([createdAt])
+  @@index([organizationId])
 }
 
 model Alert {
-  id         String        @id @default(cuid())
-  type       String
-  severity   AlertSeverity
-  entityType String
-  entityId   String
-  message    String
-  tarih      DateTime      @db.Date
-  resolved   Boolean       @default(false)
-  resolvedAt DateTime?
-  createdAt  DateTime      @default(now())
+  id             String        @id @default(cuid())
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  organizationId String
+  type           String
+  severity       AlertSeverity
+  entityType     String
+  entityId       String
+  message        String
+  tarih          DateTime      @db.Date
+  resolved       Boolean       @default(false)
+  resolvedAt     DateTime?
+  createdAt      DateTime      @default(now())
 
   @@index([tarih, resolved])
+  @@index([organizationId, tarih])
 }
 
 model BkdsPersonelLog {
-  id             String   @id @default(cuid())
-  tarih          DateTime @db.Date
-  maskedAd       String   // BKDS'den gelen maskeli isim
+  id             String       @id @default(cuid())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  tarih          DateTime     @db.Date
+  maskedAd       String
   ilkGiris       DateTime
   sonCikis       DateTime?
-  // Eşleşme sonucu
-  staffId        String?  // eşleştiyse
-  staff          Staff?   @relation(fields: [staffId], references: [id])
-  eslesmeDurumu  String   // tam_eslesme | prefix_eslesme | eslesme_yok
-  tahminEdilenAd String?  // prefix eşleşmesinde tahmin
-  createdAt      DateTime @default(now())
+  staffId        String?
+  staff          Staff?       @relation(fields: [staffId], references: [id])
+  eslesmeDurumu  String
+  tahminEdilenAd String?
+  createdAt      DateTime     @default(now())
 
   @@index([tarih])
   @@index([staffId, tarih])
+  @@index([organizationId, tarih])
 }
