@@ -1,93 +1,89 @@
 """
-bkds_router.py — Rehapp FastAPI router
-BKDS Takip uygulamasına SSO yönlendirmesi sağlar.
+bkds_router.py — Rehapp FastAPI router (Rehapp-spesifik implementasyon)
 
-Kurulum:
+Mimari:
+  Rehapp'ta kullanıcı = Kurum. Her kurum kendi JWT token'ıyla giriş yapar.
+  get_current_kurum dependency JWT'den kurum_id okur.
+
+Kurulum (rehapp-backend/main.py veya app/routers/__init__.py):
+    from routers.bkds import router as bkds_router
     app.include_router(bkds_router, prefix="/bkds", tags=["BKDS"])
 
-Gerekli ortam değişkenleri:
+Gerekli ortam değişkenleri (.env):
     BKDS_APP_URL    = "https://bkds.rehapp.com"
-    BKDS_SSO_SECRET = "<paylaşılan gizli anahtar>"
+    BKDS_SSO_SECRET = "<bkds-takip SSO_SECRET ile aynı değer>"
 """
 
+import os
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import RedirectResponse
 import httpx
 
-from app.core.config import settings          # TODO: kendi config sınıfını kullan
-from app.api.deps import get_current_user     # TODO: kendi auth dependency'ni kullan
-from app.models.user import User              # TODO: kendi User modelini kullan
+# Rehapp'ın mevcut auth dependency'si
+from auth import get_current_kurum          # rehapp-backend/auth.py
+from db import get_db                       # gerekirse
+from sqlalchemy.orm import Session
 
-bkds_router = APIRouter()
+router = APIRouter()
+
+BKDS_APP_URL    = os.getenv("BKDS_APP_URL",    "https://bkds.rehapp.com")
+BKDS_SSO_SECRET = os.getenv("BKDS_SSO_SECRET", "")
 
 
-def _org_slug_for_user(user: User) -> str:
+def _org_slug(kurum) -> str:
     """
-    Kullanıcının kurumuna ait org_slug döndür.
-    Bu slug bkds-takip veritabanındaki Organization.slug ile eşleşmeli.
+    Rehapp kurum_id → bkds-takip Organization.slug
 
-    TODO: Kendi modelinden org_slug'ı çek. Örnek:
-        return user.organization.bkds_slug
-        veya
-        return user.kurum.slug
+    Rehapp'ta Kurum.id (integer) kullanılıyor.
+    bkds-takip'te kurum oluştururken slug = str(rehapp_kurum_id) set edilmeli.
+    Örnek: Rehapp kurum_id=42 → bkds-takip slug="42"
     """
-    raise NotImplementedError(
-        "user nesnesinden org_slug çekme mantığını implement et. "
-        "bkds-takip'teki Organization.slug ile eşleşmeli."
-    )
+    return str(kurum.id)
 
 
-def _role_for_user(user: User) -> str:
+@router.get(
+    "/sso-url",
+    summary="BKDS Takip SSO URL'i üret",
+    description=(
+        "Streamlit frontend'i bu endpoint'i çağırır. "
+        "Tek kullanımlık (2 dk geçerli) bir redirect URL döner. "
+        "Streamlit bu URL'i link olarak gösterir."
+    ),
+)
+async def get_bkds_sso_url(kurum=Depends(get_current_kurum)):
     """
-    Rehapp rolünü bkds-takip rolüne map et.
-    bkds-takip rolleri: admin | yonetici | danisma
-
-    TODO: Kendi rol yapına göre map et. Örnek:
-        role_map = {
-            "kurum_admin": "admin",
-            "mudur":       "yonetici",
-            "danisma":     "danisma",
-        }
-        return role_map.get(user.role, "danisma")
+    Kurum için bkds-takip'ten SSO token alır ve redirect URL döner.
+    Streamlit Authorization header ile bu endpoint'i çağırır.
     """
-    return "admin"  # varsayılan: admin olarak gönder
+    if not BKDS_SSO_SECRET:
+        raise HTTPException(status_code=500, detail="BKDS_SSO_SECRET tanımlı değil")
 
+    org_slug = _org_slug(kurum)
 
-@bkds_router.get("/redirect", summary="BKDS Takip SSO yönlendirmesi")
-async def bkds_redirect(current_user: User = Depends(get_current_user)):
-    """
-    Kullanıcıyı BKDS Takip uygulamasına SSO ile yönlendirir.
-    Rehapp'taki BKDS butonuna tıklandığında bu endpoint çağrılır.
-    """
-    org_slug = _org_slug_for_user(current_user)
-    role = _role_for_user(current_user)
-
-    # bkds-takip'ten tek kullanımlık SSO token al
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             resp = await client.post(
-                f"{settings.BKDS_APP_URL}/api/sso",
+                f"{BKDS_APP_URL}/api/sso",
                 json={
                     "org_slug": org_slug,
-                    "role": role,
-                    "secret": settings.BKDS_SSO_SECRET,
+                    "role": "admin",        # Rehapp'ta tek rol: kurum admini
+                    "secret": BKDS_SSO_SECRET,
                 },
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"BKDS SSO token alınamadı: {exc.response.status_code}",
-            )
-        except httpx.RequestError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail=f"BKDS uygulamasına bağlanılamadı: {exc}",
-            )
+            detail = "BKDS'e erişim reddedildi"
+            if exc.response.status_code == 404:
+                detail = (
+                    f"Kurum '{org_slug}' bkds-takip'te bulunamadı. "
+                    "Superadmin panelden organizasyon oluşturun."
+                )
+            raise HTTPException(status_code=502, detail=detail)
+        except httpx.RequestError:
+            raise HTTPException(status_code=503, detail="BKDS uygulamasına bağlanılamadı")
 
     data = resp.json()
     redirect_url = data.get("redirect_url")
     if not redirect_url:
         raise HTTPException(status_code=502, detail="BKDS'den geçersiz yanıt")
 
-    return RedirectResponse(url=redirect_url, status_code=302)
+    return {"redirect_url": redirect_url, "org_slug": org_slug}

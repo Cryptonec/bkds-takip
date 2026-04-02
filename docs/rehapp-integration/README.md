@@ -1,26 +1,39 @@
 # Rehapp ↔ BKDS Takip Entegrasyon Rehberi
 
-## Mimari Özet
+## Mimari
 
 ```
-Rehapp (Streamlit + FastAPI)          BKDS Takip (Next.js)
-─────────────────────────────         ───────────────────────────
+Rehapp (Streamlit + FastAPI)              BKDS Takip (Next.js)
+────────────────────────────────          ─────────────────────────────
 Kullanıcı BKDS butonuna tıklar
-        │
-        ▼
-GET /bkds/redirect  (FastAPI)
-        │
-        ▼ POST /api/sso  {org_slug, role, secret}
-        │────────────────────────────────────────►
-        │◄────────────────────────────────────────
-        │  { redirect_url: "…/api/sso/callback?token=…" }
-        │
-        ▼
-302 Redirect → BKDS Takip callback
-        │
-        ▼ Token doğrulama + NextAuth oturumu
-Otomatik giriş tamamlandı ✓
+         │
+         ▼
+_fetch_bkds_url()  (Streamlit, server-side)
+  GET /bkds/sso-url
+  Authorization: Bearer <JWT>
+         │
+         ▼ JWT doğrulama → get_current_kurum
+  POST /api/sso  {org_slug, role, secret}
+         │───────────────────────────────────►
+         │◄───────────────────────────────────
+         │  { redirect_url: "…/api/sso/callback?token=…" }
+         │
+         ▼
+  { redirect_url } → Streamlit HTML link
+         │
+         ▼ Kullanıcı linke tıklar (yeni sekme)
+  GET /api/sso/callback?token=…
+         │
+         ▼ Token doğrulama → NextAuth oturumu
+  Otomatik giriş tamamlandı ✓
 ```
+
+> **Neden direkt link değil?**
+> Streamlit'ten gelen link istekleri `Authorization` header taşıyamaz.
+> Bu yüzden Streamlit Python kodu `/bkds/sso-url` endpoint'ini server-side
+> çağırır, dönüş URL'ini HTML link olarak render eder.
+
+---
 
 ## Adım Adım Kurulum
 
@@ -28,62 +41,67 @@ Otomatik giriş tamamlandı ✓
 
 ```bash
 python -c "import secrets; print(secrets.token_hex(32))"
-# Örnek: a3f8c2...
+# Çıktıyı kopyala — her iki .env'e aynı değer girilecek
 ```
 
-### 2. Rehapp `.env` Dosyasına Ekle
+### 2. rehapp-backend `.env`
 
 ```env
 BKDS_APP_URL=https://bkds.rehapp.com
 BKDS_SSO_SECRET=<yukarıdaki_değer>
 ```
 
-### 3. BKDS Takip `.env` Dosyasına Ekle
+### 3. rehapp-frontend `.env`
 
 ```env
-SSO_SECRET=<yukarıdaki_değer>          # Rehapp ile aynı!
+REHAPP_INTERNAL_API_URL=http://rehapp-backend:8000   # internal URL
+```
+
+### 4. bkds-takip `.env`
+
+```env
+SSO_SECRET=<1. adımdaki değer>        # Rehapp ile aynı!
 NEXTAUTH_URL=https://bkds.rehapp.com
-NEXTAUTH_SECRET=<ayrı_bir_random_değer>
+NEXTAUTH_SECRET=<ayrı random değer>
 DATABASE_URL=postgresql://...
 ```
 
-### 4. Rehapp `settings.py`'a Alan Ekle
+### 5. rehapp-backend'e Router Ekle
 
-`settings_snippet.py` dosyasındaki alanları kopyala:
-
-```python
-BKDS_APP_URL: str = "https://bkds.rehapp.com"
-BKDS_SSO_SECRET: str
-```
-
-### 5. FastAPI Router'ı Ekle
+`rehapp-backend/routers/bkds.py` olarak kopyala, sonra `main.py`'a ekle:
 
 ```python
-# app/main.py veya app/api/router.py
-from bkds_router import bkds_router
+from routers.bkds import router as bkds_router
 app.include_router(bkds_router, prefix="/bkds", tags=["BKDS"])
 ```
 
-`bkds_router.py` içindeki 2 TODO'yu doldur:
-- `_org_slug_for_user(user)` → `user.organization.bkds_slug` veya benzeri
-- `_role_for_user(user)` → Rehapp rollerini `admin|yonetici|danisma`'ya map et
+### 6. rehapp-frontend'e Buton Ekle
 
-### 6. Streamlit'e Buton Ekle
+**Seçenek A — Sidebar'a ekle** (`app.py`):
 
 ```python
-# Sidebar'a:
-from bkds_page import render_bkds_button
-with st.sidebar:
-    render_bkds_button(st.session_state.current_user)
+from bkds_page import render_bkds_sidebar_button
 
-# Veya ayrı sayfa olarak pages/bkds.py:
-from bkds_page import render_bkds_page
-render_bkds_page(st.session_state.current_user)
+# Sidebar'ın uygun yerine:
+render_bkds_sidebar_button()
 ```
 
-### 7. BKDS Takip'te Kurum Oluştur
+**Seçenek B — Ayrı sayfa** (`pages/bkds.py` oluştur):
 
-Superadmin hesabıyla giriş yap ve her müşteri için:
+```python
+import streamlit as st
+from bkds_page import render_bkds_page
+
+if st.session_state.get("page") != "app":
+    st.error("Lütfen giriş yapın.")
+    st.stop()
+
+render_bkds_page()
+```
+
+### 7. bkds-takip'te Kurum Oluştur (Superadmin)
+
+`org_slug` = Rehapp'taki `kurum_id` (string olarak):
 
 ```bash
 curl -X POST https://bkds.rehapp.com/api/admin/organizations \
@@ -91,7 +109,7 @@ curl -X POST https://bkds.rehapp.com/api/admin/organizations \
   -H "Content-Type: application/json" \
   -d '{
     "name": "ABC Özel Eğitim",
-    "slug": "abc-ozel-egitim",     ← Rehapp org_slug ile aynı!
+    "slug": "42",                ← Rehapp kurum_id ile aynı! str(kurum.id)
     "plan": "pro",
     "credentials": {
       "username": "bkds_kullanici",
@@ -105,24 +123,36 @@ curl -X POST https://bkds.rehapp.com/api/admin/organizations \
 
 ### 8. Uçtan Uca Test
 
-1. Rehapp'ta BKDS butonuna tıkla
-2. `GET /bkds/redirect` → `POST /api/sso` → `302 /api/sso/callback?token=...`
-3. BKDS Takip'te otomatik giriş → dashboard görünmeli
+1. Rehapp'ta giriş yap
+2. BKDS butonuna tıkla
+3. Yeni sekmede BKDS Takip açılmalı — şifre sorulmadan
 4. Farklı kurumların verisinin birbirini görmediğini doğrula
 
-## Güvenlik Notları
+---
 
-- `SSO_SECRET` / `BKDS_SSO_SECRET` production'da asla git'e commit edilmemeli
-- SSO token tek kullanımlıktır ve 2 dakikada sona erer
-- HTTPS zorunlu; HTTP üzerinde secret gönderilmemeli
-- `BkdsCredential.password` production'da uygulama seviyesinde şifrelenebilir
-  (örn. `@prisma/client` öncesinde AES-256-GCM ile)
+## Slug Eşleştirme
+
+| Rehapp                  | bkds-takip                  |
+|-------------------------|-----------------------------|
+| `kurum.id` (int, ör 42) | `Organization.slug = "42"`  |
+| Her kurum tek kullanıcı | Role her zaman `"admin"`    |
+
+---
+
+## Güvenlik
+
+- `SSO_SECRET` / `BKDS_SSO_SECRET` asla git'e commit edilmemeli
+- SSO token tek kullanımlıktır, 2 dakikada sona erer
+- HTTPS zorunlu
+- Superadmin hesabı güçlü şifreyle korunmalı
+
+---
 
 ## Dosya Listesi
 
-| Dosya | Açıklama |
-|-------|----------|
-| `bkds_router.py` | FastAPI endpoint — SSO token alıp redirect |
-| `bkds_page.py` | Streamlit buton/sayfa bileşeni |
-| `settings_snippet.py` | Pydantic Settings eklentisi |
+| Dosya | Nereye kopyalanır |
+|-------|-------------------|
+| `bkds_router.py` | `rehapp-backend/routers/bkds.py` |
+| `bkds_page.py` | `rehapp-frontend/bkds_page.py` |
+| `settings_snippet.py` | `.env` referansı |
 | `README.md` | Bu dosya |

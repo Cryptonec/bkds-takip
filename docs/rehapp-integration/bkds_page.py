@@ -1,91 +1,130 @@
 """
-bkds_page.py — Rehapp Streamlit bileşeni
-BKDS Takip'e yönlendiren butonu Streamlit arayüzüne ekler.
+bkds_page.py — Rehapp Streamlit entegrasyonu (Rehapp-spesifik implementasyon)
 
-Kullanım (Streamlit sayfasında):
-    from bkds_page import render_bkds_button
-    render_bkds_button(current_user)
+Streamlit'in Authorization header gönderememesi nedeniyle:
+  1. Python kodu FastAPI /bkds/sso-url endpoint'ini çağırır (server-side)
+  2. Dönen redirect_url'i HTML link olarak render eder
+  3. Her sayfa render'ında taze URL üretilir (token 2 dk geçerli)
 
-    veya tam sayfa olarak:
-    from bkds_page import render_bkds_page
-    render_bkds_page(current_user)
+Kullanım seçenekleri:
+  A) Sidebar'a buton ekle     → render_bkds_sidebar_button()
+  B) Ayrı sayfa oluştur       → pages/bkds.py oluştur, render_bkds_page() çağır
+  C) Herhangi bir sayfada     → render_bkds_button() çağır
 """
 
-import streamlit as st
 import os
-from typing import Any
+import httpx
+import streamlit as st
 
-# FastAPI sunucusunun base URL'i (Streamlit'ten erişilebilir olmalı)
-# TODO: kendi konfigürasyonundan al
+# Rehapp backend URL — Streamlit server'dan erişilebilir olmalı
 REHAPP_API_URL = os.getenv("REHAPP_INTERNAL_API_URL", "http://localhost:8000")
 
 
-def render_bkds_button(current_user: Any, label: str = "📊 BKDS Takip") -> None:
+def _fetch_bkds_url() -> str | None:
     """
-    Sidebar veya herhangi bir Streamlit sayfasına BKDS butonu ekler.
-    Butona tıklandığında FastAPI /bkds/redirect endpoint'ine gider,
-    oradan BKDS Takip uygulamasına SSO ile yönlendirilir.
+    FastAPI /bkds/sso-url endpoint'ini çağırır, redirect URL döner.
+    Hata durumunda None döner.
 
-    Args:
-        current_user: Oturum açmış Rehapp kullanıcısı
-        label: Buton etiketi
+    st.session_state["token"] JWT token'ını kullanır.
     """
-    bkds_url = f"{REHAPP_API_URL}/bkds/redirect"
+    token = st.session_state.get("token")
+    if not token:
+        return None
 
-    # Streamlit'te yeni sekmede açmak için JavaScript kullan
-    st.markdown(
-        f"""
-        <a href="{bkds_url}" target="_blank" rel="noopener noreferrer"
-           style="display:inline-block; padding:0.4rem 1rem; background:#1d4ed8;
-                  color:white; border-radius:6px; text-decoration:none;
-                  font-size:0.9rem; font-weight:500;">
-          {label}
-        </a>
-        """,
-        unsafe_allow_html=True,
-    )
+    try:
+        resp = httpx.get(
+            f"{REHAPP_API_URL}/bkds/sso-url",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=8.0,
+            follow_redirects=False,  # FastAPI JSON döndürüyor, redirect yok
+        )
+        resp.raise_for_status()
+        return resp.json().get("redirect_url")
+    except Exception:
+        return None
 
 
-def render_bkds_page(current_user: Any) -> None:
+def render_bkds_button(label: str = "BKDS Takip") -> None:
     """
-    BKDS Takip'e yönlendirme sayfası.
-    Streamlit'te ayrı bir sayfa (page) olarak kullanılabilir.
+    BKDS Takip'e yönlendiren SSO butonu.
+    Yeni sekmede açılır. Her render'da taze token üretilir.
     """
-    st.title("BKDS Takip")
+    bkds_url = _fetch_bkds_url()
+
+    if bkds_url:
+        st.markdown(
+            f"""
+            <a href="{bkds_url}" target="_blank" rel="noopener noreferrer"
+               style="display:inline-flex; align-items:center; gap:6px;
+                      padding:0.45rem 1.1rem; background:#1d4ed8; color:white;
+                      border-radius:6px; text-decoration:none; font-size:0.9rem;
+                      font-weight:500; white-space:nowrap;">
+              📊 {label}
+            </a>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.warning("BKDS bağlantısı kurulamadı. Lütfen daha sonra tekrar deneyin.")
+
+
+def render_bkds_sidebar_button() -> None:
+    """
+    Sidebar'a BKDS butonu ekler.
+    app.py'daki sidebar bölümüne ekle:
+
+        from bkds_page import render_bkds_sidebar_button
+        with st.sidebar:
+            st.divider()
+            render_bkds_sidebar_button()
+    """
+    with st.sidebar:
+        st.divider()
+        render_bkds_button(label="BKDS Takip")
+
+
+def render_bkds_page() -> None:
+    """
+    BKDS Takip sayfası — pages/bkds.py olarak kullan.
+
+    pages/bkds.py içeriği:
+        import streamlit as st
+        from bkds_page import render_bkds_page
+
+        if st.session_state.get("page") != "app":
+            st.error("Lütfen giriş yapın.")
+            st.stop()
+        render_bkds_page()
+    """
+    kurum_ad = st.session_state.get("kurum_ad", "")
+
+    st.title("BKDS Devam Takip")
+    if kurum_ad:
+        st.caption(f"Kurum: {kurum_ad}")
+
     st.write(
-        "Öğrenci ve personel BKDS (Biyometrik Kimlik Doğrulama Sistemi) "
-        "devam takip paneline yönlendiriliyorsunuz."
+        "Öğrenci ve personelin BKDS (Biyometrik Kimlik Doğrulama) "
+        "kayıtlarını gerçek zamanlı takip edin."
     )
 
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        render_bkds_button(current_user, label="BKDS Takip'e Git →")
+    bkds_url = _fetch_bkds_url()
 
-    st.caption(
-        "Bu butona tıklayarak otomatik giriş yapılır. "
-        "Tekrar giriş bilgisi girmenize gerek yoktur."
-    )
-
-
-# ── Sidebar'a entegrasyon örneği ────────────────────────────────────────────
-#
-# app/sidebar.py veya navigation bileşeninize ekleyin:
-#
-#   from bkds_page import render_bkds_button
-#
-#   with st.sidebar:
-#       st.divider()
-#       render_bkds_button(st.session_state.current_user)
-#
-# ── Ayrı sayfa olarak ───────────────────────────────────────────────────────
-#
-# pages/bkds.py dosyası oluşturun:
-#
-#   import streamlit as st
-#   from bkds_page import render_bkds_page
-#
-#   if "current_user" not in st.session_state:
-#       st.error("Lütfen giriş yapın")
-#       st.stop()
-#
-#   render_bkds_page(st.session_state.current_user)
+    if bkds_url:
+        st.markdown(
+            f"""
+            <a href="{bkds_url}" target="_blank" rel="noopener noreferrer"
+               style="display:inline-flex; align-items:center; gap:8px;
+                      padding:0.6rem 1.4rem; background:#1d4ed8; color:white;
+                      border-radius:8px; text-decoration:none; font-size:1rem;
+                      font-weight:600;">
+              📊 BKDS Takip'i Aç
+            </a>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.caption("Yeni sekmede açılır. Tekrar giriş gerektirmez.")
+    else:
+        st.error(
+            "BKDS bağlantısı kurulamadı. "
+            "Kurumunuzun BKDS Takip'te tanımlı olduğundan emin olun."
+        )
