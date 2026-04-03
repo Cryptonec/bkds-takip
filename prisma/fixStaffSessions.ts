@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   const lessons = await prisma.lessonSession.findMany({
-    select: { staffId: true, tarih: true, baslangic: true, bitis: true, derslik: true },
+    select: { staffId: true, tarih: true, baslangic: true, bitis: true, derslik: true, organizationId: true },
   });
 
   let created = 0;
@@ -15,7 +15,7 @@ async function main() {
 
   for (const l of lessons) {
     const existing = await prisma.staffSession.findFirst({
-      where: { staffId: l.staffId, baslangic: l.baslangic, bitis: l.bitis },
+      where: { staffId: l.staffId, baslangic: l.baslangic, bitis: l.bitis, organizationId: l.organizationId },
     });
     if (!existing) {
       await prisma.staffSession.create({
@@ -25,6 +25,7 @@ async function main() {
           baslangic: l.baslangic,
           bitis: l.bitis,
           derslik: l.derslik,
+          organizationId: l.organizationId,
         },
       });
       created++;
