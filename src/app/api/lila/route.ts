@@ -9,6 +9,9 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
 
+  const organizationId = (session.user as any).organizationId as string | undefined;
+  if (!organizationId) return NextResponse.json({ error: 'Kurum bilgisi eksik' }, { status: 403 });
+
   const formData = await req.formData();
   const file = formData.get('file') as File | null;
 
@@ -17,7 +20,7 @@ export async function POST(req: NextRequest) {
   const buffer = Buffer.from(await file.arrayBuffer());
 
   const job = await prisma.importJob.create({
-    data: { fileName: file.name, status: 'isleniyor' },
+    data: { fileName: file.name, status: 'isleniyor', organizationId },
   });
 
   try {
@@ -28,7 +31,7 @@ export async function POST(req: NextRequest) {
       data: { totalRows: rows.length },
     });
 
-    const { success, errors } = await lilaImportService.processRows(rows, job.id);
+    const { success, errors } = await lilaImportService.processRows(rows, job.id, organizationId);
 
     await prisma.importJob.update({
       where: { id: job.id },
@@ -55,7 +58,11 @@ export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
 
+  const organizationId = (session.user as any).organizationId as string | undefined;
+  if (!organizationId) return NextResponse.json({ error: 'Kurum bilgisi eksik' }, { status: 403 });
+
   const jobs = await prisma.importJob.findMany({
+    where: { organizationId },
     orderBy: { createdAt: 'desc' },
     take: 20,
   });

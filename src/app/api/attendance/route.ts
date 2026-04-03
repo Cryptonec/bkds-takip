@@ -5,7 +5,7 @@ import { getLiveAttendance, getLiveStaffAttendance, recalculateAttendance, recal
 import { getActiveAlerts, generateAlerts } from '@/lib/services/alertService';
 import { getAttendanceStatusInfo } from '@/lib/services/attendanceEngine';
 import { getStaffStatusInfo } from '@/lib/services/staffAttendanceEngine';
-import { bkdsProviderService } from '@/lib/services/bkdsProviderService';
+import { BkdsProviderService } from '@/lib/services/bkdsProviderService';
 import { prisma } from '@/lib/prisma';
 
 let lastBkdsFetch = 0;
@@ -19,6 +19,9 @@ export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
 
+  const organizationId = (session.user as any).organizationId as string | undefined;
+  if (!organizationId) return NextResponse.json({ error: 'Kurum bilgisi eksik' }, { status: 403 });
+
   const { searchParams } = new URL(req.url);
   const tarihStr = searchParams.get('tarih');
   const tarih = tarihStr ? new Date(tarihStr) : new Date();
@@ -31,22 +34,23 @@ export async function GET(req: NextRequest) {
   if (shouldFetch) {
     try {
       lastBkdsFetch = now.getTime();
-      const records = await bkdsProviderService.fetchToday();
-      await bkdsProviderService.saveAndAggregate(records, tarih);
-      await recalculateAttendance(tarih, now);
-      await recalculateStaffAttendance(tarih, now);
-      await generateAlerts(tarih);
+      const service = await BkdsProviderService.forOrganization(organizationId);
+      const records = await service.fetchToday();
+      await service.saveAndAggregate(records, tarih);
+      await recalculateAttendance(tarih, organizationId);
+      await recalculateStaffAttendance(tarih, organizationId);
+      await generateAlerts(tarih, organizationId);
     } catch (err) {
       console.error('[Attendance API] BKDS hatası:', err);
     }
   }
 
   const [attendances, staffAttendances, alerts, personelLog] = await Promise.all([
-    getLiveAttendance(tarih),
-    getLiveStaffAttendance(tarih),
-    getActiveAlerts(tarih),
+    getLiveAttendance(tarih, organizationId),
+    getLiveStaffAttendance(tarih, organizationId),
+    getActiveAlerts(tarih, organizationId),
     prisma.bkdsPersonelLog.findMany({
-      where: { tarih: dateOnly },
+      where: { tarih: dateOnly, organizationId },
       include: { staff: { select: { id: true, adSoyad: true } } },
       orderBy: { ilkGiris: 'asc' },
     }),
