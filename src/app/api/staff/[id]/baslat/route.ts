@@ -36,6 +36,7 @@ export async function POST(
       staffId: staffSession.staffId,
       tarih: staffSession.tarih,
       status,
+      organizationId: staffSession.organizationId,
     },
     update: { status },
   });
