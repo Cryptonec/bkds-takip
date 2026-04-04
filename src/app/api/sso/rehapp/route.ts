@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
   // 2. Kurum kontrolü
   const org = await prisma.organization.findUnique({ where: { slug: org_slug } });
   if (!org || !org.active) {
-    return NextResponse.json({ error: 'Kurum bulunamadı veya aktif değil' }, { status: 404 });
+    return NextResponse.json({ error: 'Kurum bulunamadı veya aktif değil', requested_slug: org_slug }, { status: 404 });
   }
 
   // 3. Kullanıcı doğrulama
