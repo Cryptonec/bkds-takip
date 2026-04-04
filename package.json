@@ -12,6 +12,7 @@
     "db:push": "prisma db push",
     "build:render": "prisma generate && prisma db push --accept-data-loss && next build",
     "db:seed": "tsx prisma/seed.ts",
+    "db:setup-org": "tsx prisma/setup-org.ts",
     "db:studio": "prisma studio",
     "test": "vitest"
   },
