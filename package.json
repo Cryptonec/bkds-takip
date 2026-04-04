@@ -10,7 +10,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
-    "build:render": "prisma generate && prisma db push --accept-data-loss && next build",
+    "build:render": "prisma generate && prisma db push --accept-data-loss && npm run db:seed && node -e \"process.env.ORG_SLUG && require('child_process').execSync('npx tsx prisma/setup-org.ts', {stdio:'inherit'})\" && next build",
     "db:seed": "tsx prisma/seed.ts",
     "db:setup-org": "tsx prisma/setup-org.ts",
     "db:studio": "prisma studio",
