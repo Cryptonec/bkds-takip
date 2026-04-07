@@ -114,9 +114,9 @@ export class BkdsProviderService {
       url.searchParams.set('page_size', '100');
       url.searchParams.set('ordering', '-first_entry');
       url.searchParams.set('page', String(page));
-      url.searchParams.set('city', this.cityId);
-      url.searchParams.set('district', this.districtId);
-      url.searchParams.set('rem', this.remId);
+      if (this.cityId)     url.searchParams.set('city',     this.cityId);
+      if (this.districtId) url.searchParams.set('district', this.districtId);
+      if (this.remId)      url.searchParams.set('rem',      this.remId);
       url.searchParams.set('start_time', startTime);
       url.searchParams.set('end_time', endTime);
 
