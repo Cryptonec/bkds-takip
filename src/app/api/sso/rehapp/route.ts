@@ -17,7 +17,7 @@ import crypto from 'crypto';
 
 const SSO_SECRET = process.env.SSO_SECRET ?? '';
 const APP_URL = process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
-const TOKEN_TTL_SECONDS = 120; // 2 dakika
+const TOKEN_TTL_SECONDS = 600; // 10 dakika
 
 export async function POST(req: NextRequest) {
   if (!SSO_SECRET) {
