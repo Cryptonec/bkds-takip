@@ -38,7 +38,7 @@ export class BkdsProviderService {
     remId?: string;
   }) {
     this.organizationId = opts?.organizationId ?? null;
-    this.apiUrl = opts?.apiUrl ?? process.env.BKDS_API_URL ?? 'https://bkds-api.meb.gov.tr';
+    this.apiUrl = opts?.apiUrl ?? process.env.BKDS_API_URL ?? 'https://bkds.meb.gov.tr';
     this.username = opts?.username ?? process.env.BKDS_USERNAME ?? '';
     this.password = opts?.password ?? process.env.BKDS_PASSWORD ?? '';
     this.cityId = opts?.cityId ?? process.env.BKDS_CITY_ID ?? '';
