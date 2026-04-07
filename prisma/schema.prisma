@@ -91,9 +91,9 @@ model BkdsCredential {
   organizationId String       @unique
   username       String
   password       String       // encrypt edilmeli prod'da
-  cityId         String
-  districtId     String
-  remId          String
+  cityId         String    @default("")
+  districtId     String    @default("")
+  remId          String    @default("")
   apiUrl         String       @default("https://bkds-api.meb.gov.tr")
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt

@@ -62,6 +62,17 @@ export async function GET(req: NextRequest) {
   if (!org || !org.active) {
     return NextResponse.redirect(new URL('/giris?error=OrgNotFound&slug=' + orgSlug, APP_URL));
   }
+  // MEB kimlik bilgilerini kaydet / güncelle
+  const mebUsername = String(claims.meb_username ?? '').trim();
+  const mebPassword = String(claims.meb_password ?? '').trim();
+  if (mebUsername && mebPassword) {
+    await prisma.bkdsCredential.upsert({
+      where:  { organizationId: org.id },
+      create: { organizationId: org.id, username: mebUsername, password: mebPassword },
+      update: { username: mebUsername, password: mebPassword },
+    });
+  }
+
   const hexToken  = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + TOKEN_TTL_SECONDS * 1000);
   await prisma.ssoToken.create({
