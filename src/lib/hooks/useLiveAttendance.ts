@@ -194,8 +194,9 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
           });
         }
       }
-      // tumPersonelGirisler'den (derssiz olanlar)
+      // tumPersonelGirisler'den — yalnızca bugün dersi olanları bildirime dahil et
       for (const p of (json.tumPersonelGirisler ?? [])) {
+        if (!p.dersVar) continue; // derssiz personel → bildirim yok
         const key = p.staffId ?? p.ogretmenAdi;
         if (!tumGirisMap.has(key)) {
           tumGirisMap.set(key, {
