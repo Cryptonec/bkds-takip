@@ -48,8 +48,20 @@ export async function GET(req: NextRequest) {
     })();
   }
 
-  const [attendances, staffAttendances, alerts, personelLog, latestJobForToday] = await Promise.all([
-    getLiveAttendance(tarih, organizationId),
+  // En son import job'u önce bul — getLiveAttendance filtrelemesi için gerekli
+  const latestJobForToday = await prisma.importJob.findFirst({
+    where: {
+      organizationId,
+      status: 'tamamlandi',
+      lessonSessions: { some: { tarih: dateOnly } },
+    },
+    orderBy: { completedAt: 'desc' },
+  });
+
+  const importJobId = latestJobForToday?.id;
+
+  const [attendances, staffAttendances, alerts, personelLog, toplamDers] = await Promise.all([
+    getLiveAttendance(tarih, organizationId, importJobId),
     getLiveStaffAttendance(tarih, organizationId),
     getActiveAlerts(tarih, organizationId),
     prisma.bkdsPersonelLog.findMany({
@@ -57,23 +69,10 @@ export async function GET(req: NextRequest) {
       include: { staff: { select: { id: true, adSoyad: true } } },
       orderBy: { ilkGiris: 'asc' },
     }),
-    // En son import job'u bul (bugüne ait session'ı olan)
-    prisma.importJob.findFirst({
-      where: {
-        organizationId,
-        status: 'tamamlandi',
-        lessonSessions: { some: { tarih: dateOnly } },
-      },
-      orderBy: { completedAt: 'desc' },
-    }),
+    importJobId
+      ? prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId, importJobId } })
+      : prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId } }),
   ]);
-
-  // O job'un bugüne ait ders sayısı — yoksa tüm unique session'lar
-  const toplamDers = latestJobForToday
-    ? await prisma.lessonSession.count({
-        where: { tarih: dateOnly, organizationId, importJobId: latestJobForToday.id },
-      })
-    : await prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId } });
 
   const ogrenciRows = attendances.map((a) => {
     const info = getAttendanceStatusInfo(a.status);

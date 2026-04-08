@@ -77,12 +77,16 @@ export async function recalculateStaffAttendance(
   );
 }
 
-export async function getLiveAttendance(tarih: Date, organizationId: string) {
+export async function getLiveAttendance(tarih: Date, organizationId: string, importJobId?: string) {
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
   return prisma.attendance.findMany({
-    where: { tarih: dateOnly, organizationId },
+    where: {
+      tarih: dateOnly,
+      organizationId,
+      ...(importJobId ? { lessonSession: { importJobId } } : {}),
+    },
     include: {
       lessonSession: { include: { staff: true } },
       student: true,
