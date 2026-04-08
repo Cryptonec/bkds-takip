@@ -91,7 +91,7 @@ export default function ProgramPage() {
 
     setSaving(slot);
     const [h, m] = slot.split(':').map(Number);
-    const endMin = h * 60 + m + 50;
+    const endMin = h * 60 + m + 40;
     const bitisSaati = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
 
     await fetch('/api/program', {
