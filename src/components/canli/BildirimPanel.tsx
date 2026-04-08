@@ -64,9 +64,16 @@ function BildirimGrubu({ tip, liste, onDismiss }: { tip: keyof typeof tipConfig;
           {c.icon}
         </div>
         <span className={cn('font-semibold text-sm', c.text)}>{c.emoji} {c.baslik}</span>
-        <span className={cn('ml-auto text-white text-xs font-bold px-2 py-0.5 rounded-full', c.countBg)}>
+        <span className={cn('text-white text-xs font-bold px-2 py-0.5 rounded-full', c.countBg)}>
           {liste.length}
         </span>
+        <button
+          onClick={() => liste.forEach(b => onDismiss(b.id))}
+          title="Tümünü kapat"
+          className={cn('ml-auto flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border opacity-60 hover:opacity-100 transition-opacity', c.text, c.headerBg)}
+        >
+          <X className="w-3 h-3" /> Tümünü kapat
+        </button>
       </div>
       <div className="divide-y divide-white/60">
         {liste.map(b => (
