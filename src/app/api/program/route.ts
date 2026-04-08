@@ -17,8 +17,9 @@ export async function GET(req: NextRequest) {
   const lessons = await prisma.lessonSession.findMany({
     where: { tarih: dateOnly, organizationId },
     include: {
-      student: { select: { id: true, adSoyad: true } },
-      staff:   { select: { id: true, adSoyad: true } },
+      student:    { select: { id: true, adSoyad: true } },
+      staff:      { select: { id: true, adSoyad: true } },
+      attendance: { select: { status: true, girisZamani: true, cikisZamani: true } },
     },
     orderBy: [{ baslangic: 'asc' }, { student: { adSoyad: 'asc' } }],
   });

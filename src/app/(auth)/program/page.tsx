@@ -1,9 +1,14 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, ChevronLeft, ChevronRight, X, Loader2, CalendarDays, GripVertical } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, X, Loader2, CalendarDays, GripVertical, Home } from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
 
 interface Student { id: string; adSoyad: string; }
+interface Attendance {
+  status: string;
+  girisZamani: string | null;
+  cikisZamani: string | null;
+}
 interface Lesson {
   id: string;
   student: { id: string; adSoyad: string };
@@ -12,6 +17,7 @@ interface Lesson {
   bitis: string;
   derslik: string;
   bkdsRequired: boolean;
+  attendance: Attendance | null;
 }
 
 const TIME_SLOTS = Array.from({ length: 13 }, (_, i) => {
@@ -47,6 +53,40 @@ function fmtShort(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
 }
 
+function isEvdeDestek(lesson: Lesson) {
+  return !lesson.bkdsRequired || lesson.derslik.includes('evde destek');
+}
+
+/** Küçük BKDS durum rozetini döner */
+function AttBadge({ att }: { att: Attendance | null }) {
+  if (!att || att.status === 'bekleniyor') return null;
+
+  const giris = att.girisZamani ? formatTime(att.girisZamani) : null;
+  const cikis = att.cikisZamani ? formatTime(att.cikisZamani) : null;
+
+  const statusColor: Record<string, string> = {
+    giris_tamam: 'bg-green-500',
+    tamamlandi:  'bg-green-600',
+    derste:      'bg-blue-400',
+    cikis_eksik: 'bg-yellow-500',
+    erken_cikis: 'bg-orange-500',
+    gelmedi:     'bg-red-500',
+    gecikiyor:   'bg-yellow-400',
+    gec_geldi:   'bg-yellow-500',
+    giris_eksik: 'bg-red-400',
+    kritik:      'bg-red-600',
+  };
+
+  const dot = statusColor[att.status] ?? 'bg-gray-400';
+
+  return (
+    <div className="flex items-center gap-1 text-[10px] leading-none mt-0.5">
+      <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', dot)} />
+      {giris && <span className="opacity-80">{giris}{cikis ? `–${cikis}` : ''}</span>}
+    </div>
+  );
+}
+
 export default function ProgramPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [studentSearch, setStudentSearch] = useState('');
@@ -57,6 +97,7 @@ export default function ProgramPage() {
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [silConfirm, setSilConfirm] = useState<string | null>(null);
+  const [showEvde, setShowEvde] = useState(true);
   const dragStudentRef = useRef<Student | null>(null);
 
   const weekDates = getWeekDates(weekRef);
@@ -64,6 +105,16 @@ export default function ProgramPage() {
   useEffect(() => {
     fetch('/api/ogrenciler?aktif=true')
       .then(r => r.json())
+      .then((data: Student[]) => {
+        // Aynı isimde iki kayıt varsa tekilleştir
+        const seen = new Set<string>();
+        return data.filter(s => {
+          const key = s.adSoyad.toLowerCase().trim();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      })
       .then(setStudents)
       .catch(() => {});
   }, []);
@@ -79,6 +130,13 @@ export default function ProgramPage() {
   }, [selectedDay]);
 
   useEffect(() => { loadLessons(); }, [loadLessons]);
+
+  // Seçili gün bugünse 30s'de bir yenile (BKDS güncellemeleri için)
+  useEffect(() => {
+    if (selectedDay !== todayStr()) return;
+    const id = setInterval(loadLessons, 30_000);
+    return () => clearInterval(id);
+  }, [selectedDay, loadLessons]);
 
   const filteredStudents = students.filter(s =>
     !studentSearch || s.adSoyad.toLowerCase().includes(studentSearch.toLowerCase())
@@ -117,13 +175,18 @@ export default function ProgramPage() {
     loadLessons();
   }
 
-  // Group lessons by start-hour slot
+  // Filtrele: evde destek gizliyse çıkar
+  const visibleLessons = showEvde ? lessons : lessons.filter(l => !isEvdeDestek(l));
+
+  // Saate göre grupla
   const lessonsBySlot = new Map<string, Lesson[]>();
-  for (const l of lessons) {
+  for (const l of visibleLessons) {
     const h = new Date(l.baslangic).getHours();
     const slotKey = `${String(h).padStart(2, '0')}:00`;
     lessonsBySlot.set(slotKey, [...(lessonsBySlot.get(slotKey) ?? []), l]);
   }
+
+  const evdeCount = lessons.filter(isEvdeDestek).length;
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -211,9 +274,29 @@ export default function ProgramPage() {
           )}
 
           <div className="flex-1" />
+
+          {/* Evde destek toggle */}
+          {evdeCount > 0 && (
+            <button
+              onClick={() => setShowEvde(v => !v)}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors shrink-0',
+                showEvde
+                  ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
+                  : 'bg-gray-100 border-gray-200 text-gray-400 hover:bg-gray-200'
+              )}
+            >
+              <Home className="w-3.5 h-3.5" />
+              Evde Destek {showEvde ? 'Gizle' : 'Göster'}
+              <span className={cn('px-1.5 py-0.5 rounded-full text-[10px] font-bold',
+                showEvde ? 'bg-amber-200 text-amber-800' : 'bg-gray-200 text-gray-500'
+              )}>{evdeCount}</span>
+            </button>
+          )}
+
           {loading
-            ? <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-            : <span className="text-xs text-gray-400">{lessons.length} ders</span>
+            ? <Loader2 className="w-4 h-4 animate-spin text-gray-400 shrink-0" />
+            : <span className="text-xs text-gray-400 shrink-0">{visibleLessons.length} ders</span>
           }
         </div>
 
@@ -262,38 +345,52 @@ export default function ProgramPage() {
                         Kaydediliyor…
                       </div>
                     )}
-                    {slotLessons.map(l => (
-                      <div
-                        key={l.id}
-                        className="flex items-center gap-2 bg-blue-600 text-white rounded-lg px-3 py-2 text-xs shadow-sm group hover:bg-blue-700 transition-colors"
-                      >
-                        <div className="min-w-0">
-                          <p className="font-semibold leading-tight truncate max-w-[140px]">{l.student.adSoyad}</p>
-                          <p className="text-blue-200 leading-tight">
-                            {formatTime(l.baslangic)}–{formatTime(l.bitis)}
-                          </p>
-                        </div>
-                        {silConfirm === l.id ? (
-                          <div className="flex items-center gap-1 ml-1">
-                            <button
-                              onClick={() => handleDelete(l.id)}
-                              className="text-xs bg-red-500 hover:bg-red-600 text-white font-medium px-1.5 py-0.5 rounded"
-                            >Sil</button>
-                            <button
-                              onClick={() => setSilConfirm(null)}
-                              className="text-xs text-blue-200 hover:text-white px-1"
-                            >İptal</button>
+                    {slotLessons.map(l => {
+                      const evde = isEvdeDestek(l);
+                      return (
+                        <div
+                          key={l.id}
+                          className={cn(
+                            'flex items-start gap-2 rounded-lg px-3 py-2 text-xs shadow-sm group transition-colors',
+                            evde
+                              ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                              : 'bg-blue-600 hover:bg-blue-700 text-white'
+                          )}
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1">
+                              {evde && <Home className="w-3 h-3 shrink-0 opacity-80" />}
+                              <p className="font-semibold leading-tight truncate max-w-[140px]">{l.student.adSoyad}</p>
+                            </div>
+                            <p className={cn('leading-tight', evde ? 'text-amber-100' : 'text-blue-200')}>
+                              {formatTime(l.baslangic)}–{formatTime(l.bitis)}
+                            </p>
+                            <AttBadge att={l.attendance} />
                           </div>
-                        ) : (
-                          <button
-                            onClick={() => setSilConfirm(l.id)}
-                            className="ml-1 opacity-0 group-hover:opacity-100 text-blue-300 hover:text-white transition-opacity"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
+                          {silConfirm === l.id ? (
+                            <div className="flex items-center gap-1 ml-1 mt-0.5">
+                              <button
+                                onClick={() => handleDelete(l.id)}
+                                className="text-xs bg-red-500 hover:bg-red-600 text-white font-medium px-1.5 py-0.5 rounded"
+                              >Sil</button>
+                              <button
+                                onClick={() => setSilConfirm(null)}
+                                className={cn('text-xs px-1', evde ? 'text-amber-200 hover:text-white' : 'text-blue-200 hover:text-white')}
+                              >İptal</button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setSilConfirm(l.id)}
+                              className={cn('mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity',
+                                evde ? 'text-amber-200 hover:text-white' : 'text-blue-300 hover:text-white'
+                              )}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
