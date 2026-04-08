@@ -16,60 +16,72 @@ interface BkdsApiResponse {
   results: BkdsApiRecord[];
 }
 
+interface OrgCredentials {
+  apiUrl: string;
+  username: string;
+  password: string;
+  cityId: string;
+  districtId: string;
+  remId: string;
+}
+
 export class BkdsProviderService {
-  private apiUrl: string;
-  private username: string;
-  private password: string;
-  private cityId: string;
-  private districtId: string;
-  private remId: string;
-  private organizationId: string | null;
+  private organizationId: string;
+  private creds: OrgCredentials | null = null;
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
   private tokenExpiry: number = 0;
 
-  constructor(opts?: {
-    organizationId?: string;
-    apiUrl?: string;
-    username?: string;
-    password?: string;
-    cityId?: string;
-    districtId?: string;
-    remId?: string;
-  }) {
-    this.organizationId = opts?.organizationId ?? null;
-    this.apiUrl = opts?.apiUrl ?? process.env.BKDS_API_URL ?? 'https://bkds.meb.gov.tr';
-    this.username = opts?.username ?? process.env.BKDS_USERNAME ?? '';
-    this.password = opts?.password ?? process.env.BKDS_PASSWORD ?? '';
-    this.cityId = opts?.cityId ?? process.env.BKDS_CITY_ID ?? '';
-    this.districtId = opts?.districtId ?? process.env.BKDS_DISTRICT_ID ?? '';
-    this.remId = opts?.remId ?? process.env.BKDS_REM_ID ?? '';
+  constructor(organizationId: string) {
+    this.organizationId = organizationId;
   }
 
-  /**
-   * Organizasyonun DB'deki kimlik bilgileriyle yeni bir instance oluşturur.
-   */
-  static async forOrganization(organizationId: string): Promise<BkdsProviderService> {
-    const cred = await prisma.bkdsCredential.findUnique({ where: { organizationId } });
-    if (!cred) throw new Error(`Kurum (${organizationId}) için BKDS kimlik bilgisi bulunamadı`);
-    return new BkdsProviderService({
-      organizationId,
-      apiUrl: cred.apiUrl,
-      username: cred.username,
-      password: cred.password,
-      cityId: cred.cityId,
-      districtId: cred.districtId,
-      remId: cred.remId,
+  /** DB'den veya .env fallback'ten kimlik bilgilerini yükle */
+  private async getCredentials(): Promise<OrgCredentials> {
+    if (this.creds) return this.creds;
+
+    const dbCred = await prisma.bkdsCredential.findUnique({
+      where: { organizationId: this.organizationId },
     });
+
+    if (dbCred) {
+      this.creds = {
+        apiUrl: dbCred.apiUrl,
+        username: dbCred.username,
+        password: dbCred.password,
+        cityId: dbCred.cityId,
+        districtId: dbCred.districtId,
+        remId: dbCred.remId,
+      };
+    } else {
+      this.creds = {
+        apiUrl: process.env.BKDS_API_URL ?? 'https://bkds-api.meb.gov.tr',
+        username: process.env.BKDS_USERNAME ?? '',
+        password: process.env.BKDS_PASSWORD ?? '',
+        cityId: process.env.BKDS_CITY_ID ?? '',
+        districtId: process.env.BKDS_DISTRICT_ID ?? '',
+        remId: process.env.BKDS_REM_ID ?? '',
+      };
+    }
+
+    return this.creds;
+  }
+
+  invalidateCredentials() {
+    this.creds = null;
+    this.accessToken = null;
+    this.refreshToken = null;
+    this.tokenExpiry = 0;
   }
 
   private async login(): Promise<void> {
-    const res = await fetch(`${this.apiUrl}/api/users/login/`, {
+    const creds = await this.getCredentials();
+    const res = await fetch(`${creds.apiUrl}/api/users/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: this.username, password: this.password }),
+      body: JSON.stringify({ username: creds.username, password: creds.password }),
     });
-    if (!res.ok) throw new Error(`BKDS login hatası: ${res.status}`);
+    if (!res.ok) throw new Error(`BKDS login hatası [${this.organizationId}]: ${res.status}`);
     const data = await res.json();
     this.accessToken = data.access;
     this.refreshToken = data.refresh;
@@ -78,7 +90,8 @@ export class BkdsProviderService {
 
   private async refreshAccessToken(): Promise<void> {
     if (!this.refreshToken) { await this.login(); return; }
-    const res = await fetch(`${this.apiUrl}/api/users/login/refresh/`, {
+    const creds = await this.getCredentials();
+    const res = await fetch(`${creds.apiUrl}/api/users/login/refresh/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh: this.refreshToken }),
@@ -104,26 +117,27 @@ export class BkdsProviderService {
   }
 
   async fetchByTimeRange(startTime: string, endTime: string): Promise<BkdsApiRecord[]> {
+    const creds = await this.getCredentials();
     const token = await this.getToken();
     const allResults: BkdsApiRecord[] = [];
     let page = 1;
     let hasMore = true;
 
     while (hasMore) {
-      const url = new URL(`${this.apiUrl}/api/activity/daily-activity/each-individual/`);
+      const url = new URL(`${creds.apiUrl}/api/activity/daily-activity/each-individual/`);
       url.searchParams.set('page_size', '100');
       url.searchParams.set('ordering', '-first_entry');
       url.searchParams.set('page', String(page));
-      if (this.cityId)     url.searchParams.set('city',     this.cityId);
-      if (this.districtId) url.searchParams.set('district', this.districtId);
-      if (this.remId)      url.searchParams.set('rem',      this.remId);
+      if (creds.cityId)     url.searchParams.set('city',     creds.cityId);
+      if (creds.districtId) url.searchParams.set('district', creds.districtId);
+      if (creds.remId)      url.searchParams.set('rem',      creds.remId);
       url.searchParams.set('start_time', startTime);
       url.searchParams.set('end_time', endTime);
 
       const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) {
         if (res.status === 401) { await this.login(); continue; }
-        throw new Error(`BKDS API hatası: ${res.status}`);
+        throw new Error(`BKDS API hatası [${this.organizationId}]: ${res.status}`);
       }
       const data: BkdsApiResponse = await res.json();
       allResults.push(...data.results);
@@ -131,19 +145,16 @@ export class BkdsProviderService {
       page++;
     }
 
-    console.log(`[BKDS] ${allResults.length} toplam kayıt (org: ${this.organizationId ?? 'env'})`);
+    console.log(`[BKDS][${this.organizationId}] ${allResults.length} toplam kayıt`);
     return allResults;
   }
 
   async saveAndAggregate(records: BkdsApiRecord[], tarih: Date): Promise<void> {
     const orgId = this.organizationId;
-    if (!orgId) throw new Error('saveAndAggregate için organizationId gerekli');
-
     const dateOnly = new Date(tarih);
     dateOnly.setHours(0, 0, 0, 0);
 
-    // Ham verileri kaydet
-    await prisma.bkdsRaw.deleteMany({ where: { tarih: dateOnly, organizationId: orgId } });
+    await prisma.bkdsRaw.deleteMany({ where: { organizationId: orgId, tarih: dateOnly } });
     if (records.length > 0) {
       await prisma.bkdsRaw.createMany({
         data: records.map(r => ({
@@ -161,11 +172,11 @@ export class BkdsProviderService {
     const personelRecords = records.filter(r => r.individual_type === 2);
 
     const [allStudents, allStaff] = await Promise.all([
-      prisma.student.findMany({ where: { aktif: true, organizationId: orgId } }),
-      prisma.staff.findMany({ where: { aktif: true, organizationId: orgId } }),
+      prisma.student.findMany({ where: { organizationId: orgId, aktif: true } }),
+      prisma.staff.findMany({ where: { organizationId: orgId, aktif: true } }),
     ]);
 
-    // --- Öğrenci aggregate ---
+    // Öğrenci aggregate
     const bireyMap = new Map<string, BkdsApiRecord[]>();
     for (const r of bireyRecords) {
       const ex = bireyMap.get(r.individual_full_name) ?? [];
@@ -179,14 +190,14 @@ export class BkdsProviderService {
       const student = allStudents.find(s => matchMaskedName(maskedName, s.adSoyad));
       if (student) {
         await prisma.bkdsAggregate.upsert({
-          where: { studentId_tarih_organizationId: { studentId: student.id, tarih: dateOnly, organizationId: orgId } },
+          where: { studentId_tarih: { studentId: student.id, tarih: dateOnly } },
           create: { organizationId: orgId, studentId: student.id, tarih: dateOnly, adSoyad: maskedName, ilkGiris, sonCikis },
           update: { adSoyad: maskedName, ilkGiris, sonCikis },
         });
       }
     }
 
-    // --- Personel: gelişmiş eşleştirme ---
+    // Personel eşleştirme
     const personelMap = new Map<string, BkdsApiRecord[]>();
     for (const r of personelRecords) {
       const ex = personelMap.get(r.individual_full_name) ?? [];
@@ -194,7 +205,7 @@ export class BkdsProviderService {
       personelMap.set(r.individual_full_name, ex);
     }
 
-    await prisma.bkdsPersonelLog.deleteMany({ where: { tarih: dateOnly, organizationId: orgId } });
+    await prisma.bkdsPersonelLog.deleteMany({ where: { organizationId: orgId, tarih: dateOnly } });
 
     for (const [maskedName, recs] of personelMap.entries()) {
       const ilkGiris = new Date(Math.min(...recs.map(r => new Date(r.first_entry).getTime())));
@@ -239,9 +250,8 @@ export class BkdsProviderService {
 
       if (matchedStaff) {
         const sessions = await prisma.staffSession.findMany({
-          where: { staffId: matchedStaff.id, tarih: dateOnly, organizationId: orgId },
+          where: { organizationId: orgId, staffId: matchedStaff.id, tarih: dateOnly },
         });
-
         for (const session of sessions) {
           await prisma.staffSession.update({
             where: { id: session.id },
@@ -253,5 +263,19 @@ export class BkdsProviderService {
   }
 }
 
-// Geriye dönük uyumluluk için tek kurum env-tabanlı instance
-export const bkdsProviderService = new BkdsProviderService();
+const serviceCache = new Map<string, BkdsProviderService>();
+
+export function getBkdsService(organizationId: string): BkdsProviderService {
+  if (!serviceCache.has(organizationId)) {
+    serviceCache.set(organizationId, new BkdsProviderService(organizationId));
+  }
+  return serviceCache.get(organizationId)!;
+}
+
+export const bkdsProviderService = {
+  fetchToday: async () => {
+    const org = await prisma.organization.findFirst();
+    if (!org) throw new Error('Hiç kurum yok');
+    return getBkdsService(org.id).fetchToday();
+  },
+};
