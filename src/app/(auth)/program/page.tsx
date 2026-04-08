@@ -57,32 +57,25 @@ function isEvdeDestek(lesson: Lesson) {
   return !lesson.bkdsRequired || lesson.derslik.includes('evde destek');
 }
 
-/** Küçük BKDS durum rozetini döner */
+/** G ✓ / Ç ✓ giriş-çıkış rozeti */
 function AttBadge({ att }: { att: Attendance | null }) {
-  if (!att || att.status === 'bekleniyor') return null;
-
+  if (!att) return null;
   const giris = att.girisZamani ? formatTime(att.girisZamani) : null;
   const cikis = att.cikisZamani ? formatTime(att.cikisZamani) : null;
-
-  const statusColor: Record<string, string> = {
-    giris_tamam: 'bg-green-500',
-    tamamlandi:  'bg-green-600',
-    derste:      'bg-blue-400',
-    cikis_eksik: 'bg-yellow-500',
-    erken_cikis: 'bg-orange-500',
-    gelmedi:     'bg-red-500',
-    gecikiyor:   'bg-yellow-400',
-    gec_geldi:   'bg-yellow-500',
-    giris_eksik: 'bg-red-400',
-    kritik:      'bg-red-600',
-  };
-
-  const dot = statusColor[att.status] ?? 'bg-gray-400';
+  if (!giris && !cikis) return null;
 
   return (
-    <div className="flex items-center gap-1 text-[10px] leading-none mt-0.5">
-      <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', dot)} />
-      {giris && <span className="opacity-80">{giris}{cikis ? `–${cikis}` : ''}</span>}
+    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+      {giris && (
+        <span className="flex items-center gap-0.5 bg-white/20 rounded px-1 py-0.5 text-[10px] font-semibold leading-none">
+          G ✓ {giris}
+        </span>
+      )}
+      {cikis && (
+        <span className="flex items-center gap-0.5 bg-white/20 rounded px-1 py-0.5 text-[10px] font-semibold leading-none">
+          Ç ✓ {cikis}
+        </span>
+      )}
     </div>
   );
 }
@@ -194,7 +187,12 @@ export default function ProgramPage() {
       {/* Left: Student list */}
       <div className="w-60 shrink-0 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-4 pt-5 pb-3 border-b border-gray-100">
-          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Öğrenciler</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Öğrenciler</p>
+            <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+              {studentSearch ? `${filteredStudents.length} / ${students.length}` : students.length}
+            </span>
+          </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <input

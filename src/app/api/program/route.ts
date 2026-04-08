@@ -14,8 +14,20 @@ export async function GET(req: NextRequest) {
   const dateOnly = tarihStr ? new Date(tarihStr) : new Date();
   dateOnly.setHours(0, 0, 0, 0);
 
+  // En son tamamlanan import job'ı bul — eski importlardan gelen dersleri filtrele
+  const latestJob = await prisma.importJob.findFirst({
+    where: { organizationId, status: 'tamamlandi', lessonSessions: { some: { tarih: dateOnly } } },
+    orderBy: { completedAt: 'desc' },
+  });
+  const importJobId = latestJob?.id;
+
   const lessons = await prisma.lessonSession.findMany({
-    where: { tarih: dateOnly, organizationId },
+    where: {
+      tarih: dateOnly,
+      organizationId,
+      // En son import + manuel eklenenler (importJobId null); eski importlar hariç
+      ...(importJobId ? { OR: [{ importJobId }, { importJobId: null }] } : {}),
+    },
     include: {
       student:    { select: { id: true, adSoyad: true } },
       staff:      { select: { id: true, adSoyad: true } },
