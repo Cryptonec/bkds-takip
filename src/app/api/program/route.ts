@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     include: {
       student:    { select: { id: true, adSoyad: true } },
       staff:      { select: { id: true, adSoyad: true } },
-      attendance: { select: { status: true, girisZamani: true, cikisZamani: true } },
+      attendance: { select: { status: true, gercekGiris: true, gercekCikis: true } },
     },
     orderBy: [{ baslangic: 'asc' }, { student: { adSoyad: 'asc' } }],
   });

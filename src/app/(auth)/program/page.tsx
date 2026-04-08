@@ -6,8 +6,8 @@ import { cn, formatTime } from '@/lib/utils';
 interface Student { id: string; adSoyad: string; }
 interface Attendance {
   status: string;
-  girisZamani: string | null;
-  cikisZamani: string | null;
+  gercekGiris: string | null;
+  gercekCikis: string | null;
 }
 interface Lesson {
   id: string;
@@ -60,8 +60,8 @@ function isEvdeDestek(lesson: Lesson) {
 /** G ✓ / Ç ✓ giriş-çıkış rozeti */
 function AttBadge({ att }: { att: Attendance | null }) {
   if (!att) return null;
-  const giris = att.girisZamani ? formatTime(att.girisZamani) : null;
-  const cikis = att.cikisZamani ? formatTime(att.cikisZamani) : null;
+  const giris = att.gercekGiris ? formatTime(att.gercekGiris) : null;
+  const cikis = att.gercekCikis ? formatTime(att.gercekCikis) : null;
   if (!giris && !cikis) return null;
 
   return (
