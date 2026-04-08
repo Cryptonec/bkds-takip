@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { BkdsProviderService } from '@/lib/services/bkdsProviderService';
+import { getBkdsService } from '@/lib/services/bkdsProviderService';
 import { recalculateAttendance, recalculateStaffAttendance } from '@/lib/services/attendanceService';
 import { generateAlerts } from '@/lib/services/alertService';
 import { prisma } from '@/lib/prisma';
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   const tarih = new Date();
 
   try {
-    const service = await BkdsProviderService.forOrganization(organizationId);
+    const service = getBkdsService(organizationId);
     const records = await service.fetchToday();
     await service.saveAndAggregate(records, tarih);
     await recalculateAttendance(tarih, organizationId);
