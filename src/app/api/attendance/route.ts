@@ -9,7 +9,7 @@ import { getBkdsService } from '@/lib/services/bkdsProviderService';
 import { prisma } from '@/lib/prisma';
 
 let lastBkdsFetch = 0;
-const BKDS_FETCH_INTERVAL = 5000;
+const BKDS_FETCH_INTERVAL = 60000;
 
 function capitalizeDerslik(str: string): string {
   return str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
