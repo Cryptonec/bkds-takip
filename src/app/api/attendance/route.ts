@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
     })();
   }
 
-  const [attendances, staffAttendances, alerts, personelLog, toplamDers] = await Promise.all([
+  const [attendances, staffAttendances, alerts, personelLog, latestJobForToday] = await Promise.all([
     getLiveAttendance(tarih, organizationId),
     getLiveStaffAttendance(tarih, organizationId),
     getActiveAlerts(tarih, organizationId),
@@ -57,8 +57,23 @@ export async function GET(req: NextRequest) {
       include: { staff: { select: { id: true, adSoyad: true } } },
       orderBy: { ilkGiris: 'asc' },
     }),
-    prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId } }),
+    // En son import job'u bul (bugüne ait session'ı olan)
+    prisma.importJob.findFirst({
+      where: {
+        organizationId,
+        status: 'tamamlandi',
+        lessonSessions: { some: { tarih: dateOnly } },
+      },
+      orderBy: { completedAt: 'desc' },
+    }),
   ]);
+
+  // O job'un bugüne ait ders sayısı — yoksa tüm unique session'lar
+  const toplamDers = latestJobForToday
+    ? await prisma.lessonSession.count({
+        where: { tarih: dateOnly, organizationId, importJobId: latestJobForToday.id },
+      })
+    : await prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId } });
 
   const ogrenciRows = attendances.map((a) => {
     const info = getAttendanceStatusInfo(a.status);
