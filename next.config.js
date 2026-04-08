@@ -2,8 +2,9 @@
 const path = require('path');
 
 const nextConfig = {
+  output: 'standalone',
   experimental: {
-    serverComponentsExternalPackages: ['playwright', '@prisma/client'],
+    serverComponentsExternalPackages: ['@prisma/client'],
   },
   webpack(config) {
     config.resolve.alias['@'] = path.resolve(__dirname, 'src');
