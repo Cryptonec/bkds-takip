@@ -33,17 +33,19 @@ export async function GET(req: NextRequest) {
   const shouldFetch = (now.getTime() - lastBkdsFetch) >= BKDS_FETCH_INTERVAL;
   if (shouldFetch) {
     lastBkdsFetch = now.getTime();
-    try {
-      const service = getBkdsService(organizationId);
-      const fetchPromise = service.fetchToday().then(records => service.saveAndAggregate(records, tarih));
-      await Promise.race([fetchPromise, new Promise((_, r) => setTimeout(() => r(new Error('BKDS timeout')), 8000))]);
-    } catch (err) {
-      console.error('[Attendance API] BKDS hatası:', err);
-    }
-    // BKDS başarısız olsa da attendance kayıtlarını güncelle
-    await recalculateAttendance(tarih, organizationId);
-    await recalculateStaffAttendance(tarih, organizationId);
-    await generateAlerts(tarih, organizationId);
+    // Arka planda çalıştır — cevabı bekletme
+    (async () => {
+      try {
+        const service = getBkdsService(organizationId);
+        const fetchPromise = service.fetchToday().then(records => service.saveAndAggregate(records, tarih));
+        await Promise.race([fetchPromise, new Promise((_, r) => setTimeout(() => r(new Error('BKDS timeout')), 15000))]);
+      } catch (err) {
+        console.error('[Attendance API] BKDS hatası:', err);
+      }
+      await recalculateAttendance(tarih, organizationId);
+      await recalculateStaffAttendance(tarih, organizationId);
+      await generateAlerts(tarih, organizationId);
+    })();
   }
 
   const [attendances, staffAttendances, alerts, personelLog] = await Promise.all([
