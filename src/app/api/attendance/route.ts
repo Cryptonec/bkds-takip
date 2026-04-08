@@ -5,7 +5,7 @@ import { getLiveAttendance, getLiveStaffAttendance, recalculateAttendance, recal
 import { getActiveAlerts, generateAlerts } from '@/lib/services/alertService';
 import { getAttendanceStatusInfo } from '@/lib/services/attendanceEngine';
 import { getStaffStatusInfo } from '@/lib/services/staffAttendanceEngine';
-import { BkdsProviderService } from '@/lib/services/bkdsProviderService';
+import { getBkdsService } from '@/lib/services/bkdsProviderService';
 import { prisma } from '@/lib/prisma';
 
 let lastBkdsFetch = 0;
@@ -34,9 +34,9 @@ export async function GET(req: NextRequest) {
   if (shouldFetch) {
     lastBkdsFetch = now.getTime();
     try {
-      const service = await BkdsProviderService.forOrganization(organizationId);
-      const records = await service.fetchToday();
-      await service.saveAndAggregate(records, tarih);
+      const service = getBkdsService(organizationId);
+      const fetchPromise = service.fetchToday().then(records => service.saveAndAggregate(records, tarih));
+      await Promise.race([fetchPromise, new Promise((_, r) => setTimeout(() => r(new Error('BKDS timeout')), 8000))]);
     } catch (err) {
       console.error('[Attendance API] BKDS hatası:', err);
     }
