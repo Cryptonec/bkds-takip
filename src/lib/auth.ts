@@ -26,7 +26,6 @@ export const authOptions: NextAuthOptions = {
           });
 
           if (!record) return null;
-          if (record.usedAt) return null; // tek kullanımlık
           if (record.expiresAt < new Date()) return null;
 
           await prisma.ssoToken.update({

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, Suspense } from 'react';
+import { useEffect, useRef, Suspense } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Activity, Loader2 } from 'lucide-react';
@@ -8,10 +8,12 @@ function GirisForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const error = searchParams.get('error');
+  const attempted = useRef(false);
 
   useEffect(() => {
     const token = searchParams.get('token');
-    if (!token) return;
+    if (!token || attempted.current) return;
+    attempted.current = true;
 
     signIn('credentials', { ssoToken: token, redirect: false }).then((result) => {
       if (result?.error) {
