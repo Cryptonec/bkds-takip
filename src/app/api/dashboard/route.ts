@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
     }),
     prisma.staffAttendance.findMany({
       where: { tarih: dateOnly, organizationId },
-      select: { status: true },
+      select: { status: true, staffId: true },
     }),
     prisma.alert.count({
       where: { tarih: dateOnly, resolved: false, organizationId },
@@ -47,7 +47,18 @@ export async function GET(req: NextRequest) {
   ]);
 
   const statusCount = (s: string) => attendances.filter((a) => a.status === s).length;
-  const staffCount = (s: string) => staffAttendances.filter((a) => a.status === s).length;
+
+  // Personel: staffId başına en kritik durumu al (PersonelPaneli mantığıyla aynı)
+  const statusOrder: Record<string, number> = { gelmedi: 0, gecikiyor: 1, gec_basladi: 2, derste: 3, bekleniyor: 4 };
+  const staffBest = new Map<string, string>();
+  for (const r of staffAttendances) {
+    const cur = staffBest.get(r.staffId);
+    if (!cur || (statusOrder[r.status] ?? 9) < (statusOrder[cur] ?? 9)) {
+      staffBest.set(r.staffId, r.status);
+    }
+  }
+  const uniqueStaff = Array.from(staffBest.values());
+  const staffCount = (s: string) => uniqueStaff.filter(st => st === s).length;
 
   return NextResponse.json({
     tarih: dateOnly.toISOString(),
