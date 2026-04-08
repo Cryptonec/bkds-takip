@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, ChevronLeft, ChevronRight, X, Loader2, CalendarDays, GripVertical, Home, Plus } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, X, Loader2, CalendarDays, GripVertical, Home, Plus, Upload } from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
 
 interface Student { id: string; adSoyad: string; }
@@ -92,6 +92,9 @@ export default function ProgramPage() {
   const [silConfirm, setSilConfirm] = useState<string | null>(null);
   const [showEvde, setShowEvde] = useState(true);
   const [addingStudent, setAddingStudent] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ created: number; updated: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const dragStudentRef = useRef<Student | null>(null);
 
   const weekDates = getWeekDates(weekRef);
@@ -125,6 +128,47 @@ export default function ProgramPage() {
       await loadStudents();
     }
     setAddingStudent(false);
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setImporting(true);
+    setImportResult(null);
+
+    try {
+      const XLSX = await import('xlsx');
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+      // İlk sütundan isimleri topla (başlık satırı hariç)
+      const names: string[] = [];
+      for (const row of rows) {
+        const val = String(row[0] ?? '').trim();
+        if (val && val.length > 1 && !/^\d+$/.test(val)) names.push(val);
+      }
+
+      if (names.length === 0) {
+        alert('Dosyada isim bulunamadı. İlk sütunda ad soyad olduğundan emin olun.');
+        return;
+      }
+
+      const res = await fetch('/api/ogrenciler/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ names }),
+      });
+      const data = await res.json();
+      setImportResult({ created: data.created ?? 0, updated: data.updated ?? 0 });
+      await loadStudents();
+    } catch {
+      alert('Dosya okunamadı.');
+    } finally {
+      setImporting(false);
+    }
   }
 
   const loadLessons = useCallback(async () => {
@@ -204,10 +248,32 @@ export default function ProgramPage() {
         <div className="px-4 pt-5 pb-3 border-b border-gray-100">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Öğrenciler</p>
-            <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-              {studentSearch ? `${filteredStudents.length} / ${students.length}` : students.length}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                {studentSearch ? `${filteredStudents.length} / ${students.length}` : students.length}
+              </span>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+                title="Excel/CSV'den öğrenci listesi içe aktar"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
+              >
+                {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={handleImportFile}
+              />
+            </div>
           </div>
+          {importResult && (
+            <p className="text-xs text-green-700 bg-green-50 rounded-lg px-2 py-1 mb-2">
+              ✓ {importResult.created} yeni, {importResult.updated} güncellendi
+            </p>
+          )}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <input
