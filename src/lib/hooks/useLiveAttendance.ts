@@ -282,13 +282,15 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
       }
 
       // Ref'leri güncelle — her fetch'te
+      // Giriş/çıkış: mevcut API durumunu yansıt (gercekGiris sonradan silinebilir)
       prevGirisIds.current  = new Set(json.ogrenciRows.filter(r => r.gercekGiris).map(r => r.ogrenciId));
       prevCikisIds.current  = new Set(json.ogrenciRows.filter(r => r.gercekCikis).map(r => r.ogrenciId));
       prevTumGirisKeys.current = new Set(tumGirisMap.keys());
       prevTumCikisKeys.current = new Set(
         [...tumGirisMap.entries()].filter(([, v]) => v.cikisVar).map(([k]) => k)
       );
-      prevBildirimIds.current = new Set(json.bildirimler.map(b => b.id));
+      // Bildirimler BİRİKİMLİ: bir kez görülen ID günlük sıfırlanana kadar tekrar ateşlenmez
+      json.bildirimler.forEach(b => prevBildirimIds.current.add(b.id));
       isFirstFetch.current = false;
 
       setData(json);
