@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLiveAttendance } from '@/lib/hooks/useLiveAttendance';
 import { OgrenciPaneli, StatusSummaryBar } from '@/components/canli/OgrenciPaneli';
 import { PersonelPaneli } from '@/components/canli/PersonelPaneli';
@@ -45,10 +45,41 @@ export default function CanliPage() {
   const {
     data, loading, error, lastUpdated, refresh,
     yeniBildirimler, dismissBildirim,
-    tabBildirimler, dismissTabBildirim,
     yeniGirisler, yeniCikislar,
     yeniPersonelGiris, yeniPersonelCikis,
   } = useLiveAttendance(undefined, 5000);
+
+  // Kapatılan bildirim ID'leri — useRef ile React döngüsünden bağımsız
+  const dismissedRef = useRef<Set<string>>(new Set());
+  const [dismissVer, setDismissVer] = useState(0);
+
+  // Sayfa ilk açıldığında localStorage'dan oku
+  useEffect(() => {
+    const key = `bd-${new Date().toDateString()}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        (JSON.parse(raw) as string[]).forEach(id => dismissedRef.current.add(id));
+        if (dismissedRef.current.size > 0) setDismissVer(v => v + 1);
+      }
+    } catch {}
+  }, []);
+
+  const dismissTabBildirim = useCallback((id: string) => {
+    dismissedRef.current.add(id);
+    try {
+      localStorage.setItem(`bd-${new Date().toDateString()}`, JSON.stringify([...dismissedRef.current]));
+    } catch {}
+    setDismissVer(v => v + 1);
+  }, []);
+
+  // dismissVer veya data değişince yeniden hesapla
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const tabBildirimler = useMemo(
+    () => data?.bildirimler.filter(b => !dismissedRef.current.has(b.id)) ?? [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, dismissVer],
+  );
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">

@@ -1,15 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-// Modül seviyesinde — React bağımsız, sekme geçişlerinde korunur
-const _dismissedIds = new Set<string>();
-// Sayfa yüklenirken sessionStorage'dan geri yükle
-if (typeof window !== 'undefined') {
-  try {
-    const raw = sessionStorage.getItem(`bd-${new Date().toDateString()}`);
-    if (raw) (JSON.parse(raw) as string[]).forEach(id => _dismissedIds.add(id));
-  } catch {}
-}
 
 export interface LiveData {
   tarih: string;
@@ -165,10 +156,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
   const [yeniPersonelGiris, setYeniPersonelGiris] = useState<Array<{id:string;ad:string;derslik?:string}>>([]);
   const [yeniPersonelCikis, setYeniPersonelCikis] = useState<Array<{id:string;ad:string;derslik?:string}>>([]);
 
-  // Yeniden render tetiklemek için sayaç (modül Set'i React'in dışında)
-  const [dismissTick, setDismissTick] = useState(0);
-
-  const isFirstFetch = useRef(true);
+const isFirstFetch = useRef(true);
 
   const fetchData = useCallback(async () => {
     // Gün değişmişse tüm bildirimleri sıfırla
@@ -327,29 +315,9 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
     setYeniBildirimler(prev => prev.filter(b => b.id !== id));
   }, []);
 
-  const dismissTabBildirim = useCallback((id: string) => {
-    _dismissedIds.add(id);
-    try {
-      sessionStorage.setItem(`bd-${new Date().toDateString()}`, JSON.stringify([..._dismissedIds]));
-    } catch {}
-    setDismissTick(t => t + 1); // re-render tetikle
-  }, []);
-
-  // Günlük sıfırlamada dismissed ID'leri de temizle
-  // (fetchData içindeki date reset zaten prevBildirimIds'i sıfırlıyor;
-  //  dismissed'ı burada sıfırlamak yerine,
-  //  bildirim ID'si değişince zaten filtreden düşer)
-
-  // dismissTick değişince yeniden hesaplanır, modül Set'inden okur
-  void dismissTick;
-  const tabBildirimler = data
-    ? data.bildirimler.filter(b => !_dismissedIds.has(b.id))
-    : [];
-
   return {
     data, loading, error, lastUpdated, refresh: fetchData,
     yeniBildirimler, dismissBildirim,
-    tabBildirimler, dismissTabBildirim,
     yeniGirisler, yeniCikislar,
     yeniPersonelGiris, yeniPersonelCikis,
   };
