@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
+  try {
   const [lessons, attendances, staffAttendances, alerts] = await Promise.all([
     prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId } }),
     prisma.attendance.findMany({
@@ -50,4 +51,8 @@ export async function GET(req: NextRequest) {
     personelGelmedi: staffCount('gelmedi'),
     aktifAlert: alerts,
   });
+  } catch (err: any) {
+    console.error('Dashboard API hatası:', err);
+    return NextResponse.json({ error: err.message ?? 'Sunucu hatası' }, { status: 500 });
+  }
 }
