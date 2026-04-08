@@ -4,7 +4,7 @@ import { useLiveAttendance } from '@/lib/hooks/useLiveAttendance';
 import { OgrenciPaneli, StatusSummaryBar } from '@/components/canli/OgrenciPaneli';
 import { PersonelPaneli } from '@/components/canli/PersonelPaneli';
 import { BildirimPanel, BildirimlerTab } from '@/components/canli/BildirimPanel';
-import { RefreshCw, Wifi, WifiOff, AlertTriangle, Clock, UserCheck, LogOut, GraduationCap } from 'lucide-react';
+import { RefreshCw, Wifi, WifiOff, Clock, UserCheck, LogOut, GraduationCap } from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
 
 function SaatSayaci({ lastUpdated }: { lastUpdated: Date | null }) {
@@ -134,13 +134,7 @@ export default function CanliPage() {
               {data.bildirimler.filter(b => b.tip === 'yaklasan').length} ders yaklaşıyor
             </div>
           )}
-          {data && data.bildirimler.filter(b => b.tip === 'gelmedi').length > 0 && (
-            <div className="flex items-center gap-1.5 bg-red-50 border border-red-300 text-red-700 px-3 py-1.5 rounded-lg text-sm font-medium">
-              <AlertTriangle className="w-4 h-4" />
-              {data.bildirimler.filter(b => b.tip === 'gelmedi').length} öğrenci gelmedi
-            </div>
-          )}
-          {data && data.bildirimler.filter(b => b.tip === 'erken_cikis').length > 0 && (
+{data && data.bildirimler.filter(b => b.tip === 'erken_cikis').length > 0 && (
             <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-300 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium">
               <LogOut className="w-4 h-4" />
               {data.bildirimler.filter(b => b.tip === 'erken_cikis').length} erken çıkış

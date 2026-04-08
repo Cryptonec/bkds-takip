@@ -93,21 +93,6 @@ export default function DashboardPage() {
         </div>
       ) : stats ? (
         <>
-          {/* Alert banner */}
-          {stats.aktifAlert > 0 && (
-            <div className="mb-5 flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-5 py-3">
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="w-5 h-5 text-red-500" />
-                <p className="text-red-700 font-medium text-sm">
-                  {stats.aktifAlert} aktif uyarı var
-                </p>
-              </div>
-              <Link href="/canli" className="text-sm text-red-600 hover:underline font-medium">
-                Canlı takibe git →
-              </Link>
-            </div>
-          )}
-
           {/* Öğrenci stats */}
           <h2 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3">Öğrenci Devamsızlık</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
