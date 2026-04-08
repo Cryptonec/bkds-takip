@@ -17,10 +17,24 @@ export async function GET(req: NextRequest) {
   dateOnly.setHours(0, 0, 0, 0);
 
   try {
+  // En son import job'u bul (attendance route ile aynı mantık)
+  const latestJob = await prisma.importJob.findFirst({
+    where: {
+      organizationId,
+      status: 'tamamlandi',
+      lessonSessions: { some: { tarih: dateOnly } },
+    },
+    orderBy: { completedAt: 'desc' },
+  });
+  const importJobId = latestJob?.id;
+  const importFilter = importJobId ? { lessonSession: { importJobId } } : {};
+
   const [lessons, attendances, staffAttendances, alerts] = await Promise.all([
-    prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId } }),
+    importJobId
+      ? prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId, importJobId } })
+      : prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId } }),
     prisma.attendance.findMany({
-      where: { tarih: dateOnly, organizationId },
+      where: { tarih: dateOnly, organizationId, ...importFilter },
       select: { status: true },
     }),
     prisma.staffAttendance.findMany({
