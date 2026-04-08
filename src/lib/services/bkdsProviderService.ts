@@ -205,7 +205,11 @@ export class BkdsProviderService {
       personelMap.set(r.individual_full_name, ex);
     }
 
-    await prisma.bkdsPersonelLog.deleteMany({ where: { organizationId: orgId, tarih: dateOnly } });
+    // Mevcut log kayıtlarını önceden çek — deleteAll+recreate yerine akıllı güncelleme
+    const mevcutLoglar = await prisma.bkdsPersonelLog.findMany({
+      where: { organizationId: orgId, tarih: dateOnly },
+    });
+    const mevcutLogMap = new Map(mevcutLoglar.map(l => [l.maskedAd, l]));
 
     for (const [maskedName, recs] of personelMap.entries()) {
       const ilkGiris = new Date(Math.min(...recs.map(r => new Date(r.first_entry).getTime())));
@@ -235,18 +239,32 @@ export class BkdsProviderService {
         }
       }
 
-      await prisma.bkdsPersonelLog.create({
-        data: {
-          organizationId: orgId,
-          tarih: dateOnly,
-          maskedAd: maskedName,
-          ilkGiris,
-          sonCikis,
-          staffId: matchedStaff?.id ?? null,
-          eslesmeDurumu: eslesmeTipi,
-          tahminEdilenAd: tahminEdilenAd ?? null,
-        },
-      });
+      const logData = {
+        ilkGiris,
+        sonCikis,
+        staffId: matchedStaff?.id ?? null,
+        eslesmeDurumu: eslesmeTipi,
+        tahminEdilenAd: tahminEdilenAd ?? null,
+      };
+
+      const mevcutLog = mevcutLogMap.get(maskedName);
+      if (mevcutLog) {
+        // Var olan kaydı güncelle — sayı sıfırlanmaz
+        await prisma.bkdsPersonelLog.update({
+          where: { id: mevcutLog.id },
+          data: logData,
+        });
+      } else {
+        // Yeni giriş — oluştur
+        await prisma.bkdsPersonelLog.create({
+          data: {
+            organizationId: orgId,
+            tarih: dateOnly,
+            maskedAd: maskedName,
+            ...logData,
+          },
+        });
+      }
 
       if (matchedStaff) {
         const sessions = await prisma.staffSession.findMany({
