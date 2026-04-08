@@ -56,7 +56,11 @@ export default function DashboardPage() {
     }
   }
 
-  useEffect(() => { loadStats(); }, []);
+  useEffect(() => {
+    loadStats();
+    const interval = setInterval(loadStats, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="p-6 max-w-6xl mx-auto">

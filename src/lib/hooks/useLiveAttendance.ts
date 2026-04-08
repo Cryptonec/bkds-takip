@@ -155,8 +155,15 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
   const [yeniPersonelGiris, setYeniPersonelGiris] = useState<Array<{id:string;ad:string;derslik?:string}>>([]);
   const [yeniPersonelCikis, setYeniPersonelCikis] = useState<Array<{id:string;ad:string;derslik?:string}>>([]);
 
-  // Bildirimler sekmesinde kapatılan bildirim ID'leri
-  const [dismissedTabIds, setDismissedTabIds] = useState<Set<string>>(new Set());
+  // Bildirimler sekmesinde kapatılan bildirim ID'leri — sessionStorage ile korunur
+  const STORAGE_KEY = `bildirim-dismissed-${new Date().toDateString()}`;
+  const [dismissedTabIds, setDismissedTabIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      return raw ? new Set<string>(JSON.parse(raw)) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
 
   const isFirstFetch = useRef(true);
 
@@ -318,8 +325,12 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
   }, []);
 
   const dismissTabBildirim = useCallback((id: string) => {
-    setDismissedTabIds(prev => new Set([...prev, id]));
-  }, []);
+    setDismissedTabIds(prev => {
+      const next = new Set([...prev, id]);
+      try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, [STORAGE_KEY]);
 
   // Günlük sıfırlamada dismissed ID'leri de temizle
   // (fetchData içindeki date reset zaten prevBildirimIds'i sıfırlıyor;
