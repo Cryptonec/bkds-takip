@@ -49,21 +49,17 @@ export default function CanliPage() {
     yeniPersonelGiris, yeniPersonelCikis,
   } = useLiveAttendance(undefined, 5000);
 
-  // Kapatılan bildirim ID'leri — useRef ile React döngüsünden bağımsız
-  const dismissedRef = useRef<Set<string>>(new Set());
-  const [dismissVer, setDismissVer] = useState(0);
-
-  // Sayfa ilk açıldığında localStorage'dan oku
-  useEffect(() => {
-    const key = `bd-${new Date().toDateString()}`;
+  // Kapatılan bildirim ID'leri — render sırasında senkron başlatılır (useEffect geç kalır)
+  const clientInitRef = useRef(false);
+  const dismissedRef  = useRef<Set<string>>(new Set());
+  if (!clientInitRef.current && typeof window !== 'undefined') {
+    clientInitRef.current = true;
     try {
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        (JSON.parse(raw) as string[]).forEach(id => dismissedRef.current.add(id));
-        if (dismissedRef.current.size > 0) setDismissVer(v => v + 1);
-      }
+      const raw = localStorage.getItem(`bd-${new Date().toDateString()}`);
+      if (raw) (JSON.parse(raw) as string[]).forEach((id: string) => dismissedRef.current.add(id));
     } catch {}
-  }, []);
+  }
+  const [dismissVer, setDismissVer] = useState(0);
 
   const dismissTabBildirim = useCallback((id: string) => {
     dismissedRef.current.add(id);
@@ -73,8 +69,6 @@ export default function CanliPage() {
     setDismissVer(v => v + 1);
   }, []);
 
-  // dismissVer veya data değişince yeniden hesapla
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const tabBildirimler = useMemo(
     () => data?.bildirimler.filter(b => !dismissedRef.current.has(b.id)) ?? [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
