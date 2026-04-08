@@ -121,6 +121,12 @@ export default function CanliPage() {
         <div className="h-10 w-px bg-gray-200" />
 
         <div className="flex items-center gap-2 flex-1 flex-wrap">
+          {data && (
+            <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-medium">
+              <GraduationCap className="w-4 h-4" />
+              Bugün {data.ogrenciRows.length} ders
+            </div>
+          )}
           {data && data.bildirimler.filter(b => b.tip === 'yaklasan').length > 0 && (
             <div className="flex items-center gap-1.5 bg-yellow-50 border border-yellow-300 text-yellow-700 px-3 py-1.5 rounded-lg text-sm font-medium animate-pulse">
               <Clock className="w-4 h-4" />

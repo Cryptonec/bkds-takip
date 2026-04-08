@@ -140,6 +140,8 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
   // Öğrenci
   const prevGirisIds  = useRef<Set<string>>(new Set());
   const prevCikisIds  = useRef<Set<string>>(new Set());
+  // Günlük sıfırlama için tarih takibi
+  const currentDate = useRef(new Date().toDateString());
   // Personel — TÜM kaynaklar (personelRows + tumPersonelGirisler) birleşik key ile
   const prevTumGirisKeys = useRef<Set<string>>(new Set());
   const prevTumCikisKeys = useRef<Set<string>>(new Set());
@@ -155,6 +157,18 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
   const isFirstFetch = useRef(true);
 
   const fetchData = useCallback(async () => {
+    // Gün değişmişse tüm bildirimleri sıfırla
+    const today = new Date().toDateString();
+    if (currentDate.current !== today) {
+      currentDate.current = today;
+      prevBildirimIds.current = new Set();
+      prevGirisIds.current    = new Set();
+      prevCikisIds.current    = new Set();
+      prevTumGirisKeys.current = new Set();
+      prevTumCikisKeys.current = new Set();
+      isFirstFetch.current = true;
+    }
+
     try {
       const params = tarih ? `?tarih=${tarih}` : '';
       const res = await window.fetch(`/api/attendance${params}`);
