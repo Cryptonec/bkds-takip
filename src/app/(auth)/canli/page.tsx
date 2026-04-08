@@ -45,6 +45,7 @@ export default function CanliPage() {
   const {
     data, loading, error, lastUpdated, refresh,
     yeniBildirimler, dismissBildirim,
+    tabBildirimler, dismissTabBildirim,
     yeniGirisler, yeniCikislar,
     yeniPersonelGiris, yeniPersonelCikis,
   } = useLiveAttendance(undefined, 5000);
@@ -124,7 +125,7 @@ export default function CanliPage() {
           {data && (
             <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-medium">
               <GraduationCap className="w-4 h-4" />
-              Bugün {data.ogrenciRows.length} ders
+              Bugün {data.toplamDers ?? data.ogrenciRows.length} ders
             </div>
           )}
           {data && data.bildirimler.filter(b => b.tip === 'yaklasan').length > 0 && (
@@ -167,7 +168,7 @@ export default function CanliPage() {
           {[
             { key: 'ogrenci', label: 'Öğrenci Takibi', count: data?.ogrenciRows.length },
             { key: 'personel', label: 'Personel Takibi', count: (data?.tumPersonelGirisler ?? data?.personelRows ?? []).length },
-            { key: 'bildirimler', label: '🔔 Bildirimler', count: data?.bildirimler.length },
+            { key: 'bildirimler', label: '🔔 Bildirimler', count: tabBildirimler.length },
           ].map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
               className={cn('px-5 py-3 text-sm font-medium border-b-2 transition-colors',
@@ -202,8 +203,8 @@ export default function CanliPage() {
         {data && activeTab === 'personel' && (
           <PersonelPaneli rows={data.personelRows} tumPersonelGirisler={data.tumPersonelGirisler ?? []} onRefresh={refresh} />
         )}
-        {data && activeTab === 'bildirimler' && (
-          <BildirimlerTab bildirimler={data.bildirimler} />
+        {activeTab === 'bildirimler' && (
+          <BildirimlerTab bildirimler={tabBildirimler} onDismiss={dismissTabBildirim} />
         )}
       </div>
     </div>

@@ -11,6 +11,7 @@ export interface LiveData {
   alertList: Alert[];
   bildirimler: Bildirim[];
   tumPersonelGirisler: PersonelGiris[];
+  toplamDers: number;
   updatedAt: string;
 }
 
@@ -153,6 +154,9 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
   const [yeniCikislar,    setYeniCikislar]    = useState<OgrenciRow[]>([]);
   const [yeniPersonelGiris, setYeniPersonelGiris] = useState<Array<{id:string;ad:string;derslik?:string}>>([]);
   const [yeniPersonelCikis, setYeniPersonelCikis] = useState<Array<{id:string;ad:string;derslik?:string}>>([]);
+
+  // Bildirimler sekmesinde kapatılan bildirim ID'leri
+  const [dismissedTabIds, setDismissedTabIds] = useState<Set<string>>(new Set());
 
   const isFirstFetch = useRef(true);
 
@@ -310,9 +314,23 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
     setYeniBildirimler(prev => prev.filter(b => b.id !== id));
   }, []);
 
+  const dismissTabBildirim = useCallback((id: string) => {
+    setDismissedTabIds(prev => new Set([...prev, id]));
+  }, []);
+
+  // Günlük sıfırlamada dismissed ID'leri de temizle
+  // (fetchData içindeki date reset zaten prevBildirimIds'i sıfırlıyor;
+  //  dismissed'ı burada sıfırlamak yerine,
+  //  bildirim ID'si değişince zaten filtreden düşer)
+
+  const tabBildirimler = data
+    ? data.bildirimler.filter(b => !dismissedTabIds.has(b.id))
+    : [];
+
   return {
     data, loading, error, lastUpdated, refresh: fetchData,
     yeniBildirimler, dismissBildirim,
+    tabBildirimler, dismissTabBildirim,
     yeniGirisler, yeniCikislar,
     yeniPersonelGiris, yeniPersonelCikis,
   };

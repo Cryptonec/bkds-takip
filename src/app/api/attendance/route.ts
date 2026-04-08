@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
     })();
   }
 
-  const [attendances, staffAttendances, alerts, personelLog] = await Promise.all([
+  const [attendances, staffAttendances, alerts, personelLog, toplamDers] = await Promise.all([
     getLiveAttendance(tarih, organizationId),
     getLiveStaffAttendance(tarih, organizationId),
     getActiveAlerts(tarih, organizationId),
@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
       include: { staff: { select: { id: true, adSoyad: true } } },
       orderBy: { ilkGiris: 'asc' },
     }),
+    prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId } }),
   ]);
 
   const ogrenciRows = attendances.map((a) => {
@@ -176,6 +177,7 @@ export async function GET(req: NextRequest) {
     alertList: alerts,
     bildirimler,
     tumPersonelGirisler,
+    toplamDers,
     updatedAt: now.toISOString(),
   });
 }

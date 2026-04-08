@@ -55,7 +55,7 @@ const tipConfig = {
   },
 } as const;
 
-function BildirimGrubu({ tip, liste }: { tip: keyof typeof tipConfig; liste: Bildirim[] }) {
+function BildirimGrubu({ tip, liste, onDismiss }: { tip: keyof typeof tipConfig; liste: Bildirim[]; onDismiss: (id: string) => void }) {
   const c = tipConfig[tip];
   return (
     <div className={cn('rounded-xl border overflow-hidden', c.bg)}>
@@ -70,7 +70,7 @@ function BildirimGrubu({ tip, liste }: { tip: keyof typeof tipConfig; liste: Bil
       </div>
       <div className="divide-y divide-white/60">
         {liste.map(b => (
-          <div key={b.id} className="flex items-center gap-3 px-4 py-3">
+          <div key={b.id} className="flex items-center gap-3 px-4 py-3 group">
             <div className="flex-1 min-w-0">
               <p className={cn('text-sm font-semibold truncate', c.text)}>{b.ogrenciAdi}</p>
               <p className={cn('text-xs mt-0.5 opacity-75', c.text)}>{b.mesaj}</p>
@@ -79,6 +79,13 @@ function BildirimGrubu({ tip, liste }: { tip: keyof typeof tipConfig; liste: Bil
               <p className={cn('text-xs font-medium', c.text)}>{b.derslik}</p>
               <p className={cn('text-xs opacity-60', c.text)}>{formatTime(b.baslangic)}</p>
             </div>
+            <button
+              onClick={() => onDismiss(b.id)}
+              title="Bildirimi kapat"
+              className={cn('shrink-0 ml-1 p-1.5 rounded-full opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity', c.text)}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         ))}
       </div>
@@ -86,7 +93,7 @@ function BildirimGrubu({ tip, liste }: { tip: keyof typeof tipConfig; liste: Bil
   );
 }
 
-export function BildirimlerTab({ bildirimler }: { bildirimler: Bildirim[] }) {
+export function BildirimlerTab({ bildirimler, onDismiss }: { bildirimler: Bildirim[]; onDismiss: (id: string) => void }) {
   const yaklasanlar = bildirimler.filter(b => b.tip === 'yaklasan');
   const gelmediler  = bildirimler.filter(b => b.tip === 'gelmedi');
   const erkenler    = bildirimler.filter(b => b.tip === 'erken_cikis');
@@ -118,9 +125,9 @@ export function BildirimlerTab({ bildirimler }: { bildirimler: Bildirim[] }) {
       </div>
 
       {/* Gruplar */}
-      {gelmediler.length  > 0 && <BildirimGrubu tip="gelmedi"     liste={gelmediler}  />}
-      {erkenler.length    > 0 && <BildirimGrubu tip="erken_cikis" liste={erkenler}    />}
-      {yaklasanlar.length > 0 && <BildirimGrubu tip="yaklasan"    liste={yaklasanlar} />}
+      {gelmediler.length  > 0 && <BildirimGrubu tip="gelmedi"     liste={gelmediler}  onDismiss={onDismiss} />}
+      {erkenler.length    > 0 && <BildirimGrubu tip="erken_cikis" liste={erkenler}    onDismiss={onDismiss} />}
+      {yaklasanlar.length > 0 && <BildirimGrubu tip="yaklasan"    liste={yaklasanlar} onDismiss={onDismiss} />}
     </div>
   );
 }
