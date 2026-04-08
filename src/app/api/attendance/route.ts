@@ -32,17 +32,18 @@ export async function GET(req: NextRequest) {
 
   const shouldFetch = (now.getTime() - lastBkdsFetch) >= BKDS_FETCH_INTERVAL;
   if (shouldFetch) {
+    lastBkdsFetch = now.getTime();
     try {
-      lastBkdsFetch = now.getTime();
       const service = await BkdsProviderService.forOrganization(organizationId);
       const records = await service.fetchToday();
       await service.saveAndAggregate(records, tarih);
-      await recalculateAttendance(tarih, organizationId);
-      await recalculateStaffAttendance(tarih, organizationId);
-      await generateAlerts(tarih, organizationId);
     } catch (err) {
       console.error('[Attendance API] BKDS hatası:', err);
     }
+    // BKDS başarısız olsa da attendance kayıtlarını güncelle
+    await recalculateAttendance(tarih, organizationId);
+    await recalculateStaffAttendance(tarih, organizationId);
+    await generateAlerts(tarih, organizationId);
   }
 
   const [attendances, staffAttendances, alerts, personelLog] = await Promise.all([
