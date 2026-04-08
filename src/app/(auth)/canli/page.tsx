@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useLiveAttendance } from '@/lib/hooks/useLiveAttendance';
 import { OgrenciPaneli, StatusSummaryBar } from '@/components/canli/OgrenciPaneli';
 import { PersonelPaneli } from '@/components/canli/PersonelPaneli';
-import { BildirimPanel } from '@/components/canli/BildirimPanel';
+import { BildirimPanel, BildirimlerTab } from '@/components/canli/BildirimPanel';
 import { RefreshCw, Wifi, WifiOff, AlertTriangle, Clock, UserCheck, LogOut, GraduationCap } from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
 
@@ -40,7 +40,7 @@ function SaatSayaci({ lastUpdated }: { lastUpdated: Date | null }) {
 }
 
 export default function CanliPage() {
-  const [activeTab, setActiveTab] = useState<'ogrenci' | 'personel'>('ogrenci');
+  const [activeTab, setActiveTab] = useState<'ogrenci' | 'personel' | 'bildirimler'>('ogrenci');
   const [ogrenciFilter, setOgrenciFilter] = useState('hepsi');
   const {
     data, loading, error, lastUpdated, refresh,
@@ -167,6 +167,7 @@ export default function CanliPage() {
           {[
             { key: 'ogrenci', label: 'Öğrenci Takibi', count: data?.ogrenciRows.length },
             { key: 'personel', label: 'Personel Takibi', count: (data?.tumPersonelGirisler ?? data?.personelRows ?? []).length },
+            { key: 'bildirimler', label: '🔔 Bildirimler', count: data?.bildirimler.length },
           ].map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
               className={cn('px-5 py-3 text-sm font-medium border-b-2 transition-colors',
@@ -174,7 +175,11 @@ export default function CanliPage() {
               )}>
               {tab.label}
               {tab.count !== undefined && (
-                <span className="ml-2 bg-gray-100 text-gray-600 text-xs px-1.5 py-0.5 rounded-full">{tab.count}</span>
+                <span className={cn('ml-2 text-xs px-1.5 py-0.5 rounded-full',
+                  tab.key === 'bildirimler' && tab.count > 0
+                    ? 'bg-red-500 text-white font-bold'
+                    : 'bg-gray-100 text-gray-600'
+                )}>{tab.count}</span>
               )}
             </button>
           ))}
@@ -196,6 +201,9 @@ export default function CanliPage() {
         )}
         {data && activeTab === 'personel' && (
           <PersonelPaneli rows={data.personelRows} tumPersonelGirisler={data.tumPersonelGirisler ?? []} onRefresh={refresh} />
+        )}
+        {data && activeTab === 'bildirimler' && (
+          <BildirimlerTab bildirimler={data.bildirimler} />
         )}
       </div>
     </div>
