@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, ChevronLeft, ChevronRight, X, Loader2, CalendarDays, GripVertical, Home } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, X, Loader2, CalendarDays, GripVertical, Home, Plus } from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
 
 interface Student { id: string; adSoyad: string; }
@@ -91,26 +91,41 @@ export default function ProgramPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [silConfirm, setSilConfirm] = useState<string | null>(null);
   const [showEvde, setShowEvde] = useState(true);
+  const [addingStudent, setAddingStudent] = useState(false);
   const dragStudentRef = useRef<Student | null>(null);
 
   const weekDates = getWeekDates(weekRef);
 
-  useEffect(() => {
-    fetch('/api/ogrenciler?aktif=true')
-      .then(r => r.json())
-      .then((data: Student[]) => {
-        // Aynı isimde iki kayıt varsa tekilleştir
-        const seen = new Set<string>();
-        return data.filter(s => {
-          const key = s.adSoyad.toLowerCase().trim();
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-      })
-      .then(setStudents)
-      .catch(() => {});
+  const loadStudents = useCallback(async () => {
+    const res = await fetch('/api/ogrenciler');
+    const data: Student[] = await res.json();
+    // Aynı isimde iki kayıt varsa tekilleştir
+    const seen = new Set<string>();
+    setStudents(data.filter(s => {
+      const key = s.adSoyad.toLowerCase().trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }));
   }, []);
+
+  useEffect(() => { loadStudents(); }, [loadStudents]);
+
+  async function addStudent(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setAddingStudent(true);
+    const res = await fetch('/api/ogrenciler', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adSoyad: trimmed }),
+    });
+    if (res.ok) {
+      setStudentSearch('');
+      await loadStudents();
+    }
+    setAddingStudent(false);
+  }
 
   const loadLessons = useCallback(async () => {
     setLoading(true);
@@ -198,7 +213,12 @@ export default function ProgramPage() {
             <input
               value={studentSearch}
               onChange={e => setStudentSearch(e.target.value)}
-              placeholder="Ara…"
+              onKeyDown={e => {
+                if (e.key === 'Enter' && studentSearch.trim() && filteredStudents.length === 0) {
+                  addStudent(studentSearch);
+                }
+              }}
+              placeholder="Ara veya yeni ekle…"
               className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -217,7 +237,20 @@ export default function ProgramPage() {
               <span className="truncate">{s.adSoyad}</span>
             </div>
           ))}
-          {filteredStudents.length === 0 && (
+          {filteredStudents.length === 0 && studentSearch.trim().length > 1 && (
+            <button
+              onClick={() => addStudent(studentSearch)}
+              disabled={addingStudent}
+              className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-blue-300 text-blue-600 hover:bg-blue-50 text-sm transition-colors disabled:opacity-50"
+            >
+              {addingStudent
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                : <Plus className="w-3.5 h-3.5 shrink-0" />
+              }
+              <span className="truncate">"{studentSearch.trim()}" ekle</span>
+            </button>
+          )}
+          {filteredStudents.length === 0 && studentSearch.trim().length <= 1 && (
             <p className="text-xs text-gray-400 text-center py-10">Öğrenci bulunamadı</p>
           )}
         </div>
