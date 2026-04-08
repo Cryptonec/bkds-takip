@@ -190,7 +190,7 @@ export class BkdsProviderService {
       const student = allStudents.find(s => matchMaskedName(maskedName, s.adSoyad));
       if (student) {
         await prisma.bkdsAggregate.upsert({
-          where: { studentId_tarih: { studentId: student.id, tarih: dateOnly } },
+          where: { studentId_tarih_organizationId: { studentId: student.id, tarih: dateOnly, organizationId: orgId } },
           create: { organizationId: orgId, studentId: student.id, tarih: dateOnly, adSoyad: maskedName, ilkGiris, sonCikis },
           update: { adSoyad: maskedName, ilkGiris, sonCikis },
         });
