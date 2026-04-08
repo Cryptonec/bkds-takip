@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
   if (mebUsername && mebPassword) {
     await prisma.bkdsCredential.upsert({
       where:  { organizationId: org.id },
-      create: { organizationId: org.id, username: mebUsername, password: mebPassword },
+      create: { organizationId: org.id, username: mebUsername, password: mebPassword, cityId: '', districtId: '', remId: '' },
       update: { username: mebUsername, password: mebPassword },
     });
   }
