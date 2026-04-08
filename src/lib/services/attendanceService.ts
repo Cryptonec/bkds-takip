@@ -10,49 +10,39 @@ export async function recalculateAttendance(
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
-  const lessons = await prisma.lessonSession.findMany({
-    where: { tarih: dateOnly, organizationId },
-    include: { student: true },
-  });
+  const [lessons, bkdsAggregates] = await Promise.all([
+    prisma.lessonSession.findMany({ where: { tarih: dateOnly, organizationId } }),
+    prisma.bkdsAggregate.findMany({ where: { tarih: dateOnly, organizationId } }),
+  ]);
 
-  for (const lesson of lessons) {
-    const bkds = lesson.studentId
-      ? await prisma.bkdsAggregate.findFirst({
-          where: { studentId: lesson.studentId, tarih: dateOnly, organizationId },
-        })
-      : null;
+  const bkdsMap = new Map(bkdsAggregates.map(b => [b.studentId ?? '', b]));
 
-    const status = calculateAttendanceStatus({
-      lesson: {
-        baslangic: lesson.baslangic,
-        bitis: lesson.bitis,
-        bkdsRequired: lesson.bkdsRequired,
-      },
-      bkdsGiris: bkds?.ilkGiris,
-      bkdsCikis: bkds?.sonCikis,
-      now,
-    });
-
-    await prisma.attendance.upsert({
-      where: { lessonSessionId: lesson.id },
-      create: {
-        organizationId,
-        lessonSessionId: lesson.id,
-        studentId: lesson.studentId,
-        tarih: dateOnly,
-        status,
-        girisZamani: lesson.baslangic,
-        cikisZamani: lesson.bitis,
-        gercekGiris: bkds?.ilkGiris,
-        gercekCikis: bkds?.sonCikis,
-      },
-      update: {
-        status,
-        gercekGiris: bkds?.ilkGiris,
-        gercekCikis: bkds?.sonCikis,
-      },
-    });
-  }
+  await prisma.$transaction(
+    lessons.map(lesson => {
+      const bkds = lesson.studentId ? (bkdsMap.get(lesson.studentId) ?? null) : null;
+      const status = calculateAttendanceStatus({
+        lesson: { baslangic: lesson.baslangic, bitis: lesson.bitis, bkdsRequired: lesson.bkdsRequired },
+        bkdsGiris: bkds?.ilkGiris,
+        bkdsCikis: bkds?.sonCikis,
+        now,
+      });
+      return prisma.attendance.upsert({
+        where: { lessonSessionId: lesson.id },
+        create: {
+          organizationId,
+          lessonSessionId: lesson.id,
+          studentId: lesson.studentId,
+          tarih: dateOnly,
+          status,
+          girisZamani: lesson.baslangic,
+          cikisZamani: lesson.bitis,
+          gercekGiris: bkds?.ilkGiris,
+          gercekCikis: bkds?.sonCikis,
+        },
+        update: { status, gercekGiris: bkds?.ilkGiris, gercekCikis: bkds?.sonCikis },
+      });
+    })
+  );
 }
 
 export async function recalculateStaffAttendance(
@@ -65,32 +55,26 @@ export async function recalculateStaffAttendance(
 
   const staffSessions = await prisma.staffSession.findMany({
     where: { tarih: dateOnly, organizationId },
-    include: { staff: true },
   });
 
-  for (const session of staffSessions) {
-    const status = calculateStaffStatus({
-      session: {
-        baslangic: session.baslangic,
-        bitis: session.bitis,
-        basladiMi: session.basladiMi,
-        baslamaZamani: session.baslamaZamani,
-      },
-      now,
-    });
-
-    await prisma.staffAttendance.upsert({
-      where: { staffSessionId: session.id },
-      create: {
-        organizationId,
-        staffSessionId: session.id,
-        staffId: session.staffId,
-        tarih: dateOnly,
-        status,
-      },
-      update: { status },
-    });
-  }
+  await prisma.$transaction(
+    staffSessions.map(session => {
+      const status = calculateStaffStatus({
+        session: {
+          baslangic: session.baslangic,
+          bitis: session.bitis,
+          basladiMi: session.basladiMi,
+          baslamaZamani: session.baslamaZamani,
+        },
+        now,
+      });
+      return prisma.staffAttendance.upsert({
+        where: { staffSessionId: session.id },
+        create: { organizationId, staffSessionId: session.id, staffId: session.staffId, tarih: dateOnly, status },
+        update: { status },
+      });
+    })
+  );
 }
 
 export async function getLiveAttendance(tarih: Date, organizationId: string) {
