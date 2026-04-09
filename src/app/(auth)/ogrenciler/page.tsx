@@ -74,31 +74,18 @@ export default function OgrencilerPage() {
     setImportResult(null);
 
     try {
-      const [XLSX, { parseStudentNamesFromSheet }] = await Promise.all([
-        import('xlsx'),
-        import('@/lib/utils/parseStudentNames'),
-      ]);
-      const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-      const names = parseStudentNamesFromSheet(rows);
-
-      if (names.length === 0) {
-        alert('Dosyada isim bulunamadı. "Adı" ve "Soyadı" (veya "Ad Soyad") sütunları olduğundan emin olun.');
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/ogrenciler/import', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error ?? 'Hata oluştu');
         return;
       }
-
-      const res = await fetch('/api/ogrenciler/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ names }),
-      });
-      const data = await res.json();
       setImportResult({ created: data.created ?? 0, updated: data.updated ?? 0, deletedDups: data.deletedDups ?? 0 });
       load();
     } catch {
-      alert('Dosya okunamadı.');
+      alert('Dosya gönderilemedi.');
     } finally {
       setImporting(false);
     }
@@ -115,7 +102,7 @@ export default function OgrencilerPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".xlsx,.xls,.csv"
+            accept=".xlsx,.xls,.csv,.html,.htm"
             className="hidden"
             onChange={handleImportFile}
           />
