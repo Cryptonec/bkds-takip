@@ -86,12 +86,12 @@ export async function GET(req: NextRequest) {
     const baslangic = new Date(a.lessonSession.baslangic);
     const bitis = new Date(a.lessonSession.bitis);
     const dakikaKaldi = (baslangic.getTime() - now.getTime()) / 60000;
-    const dersSuresi = (bitis.getTime() - baslangic.getTime()) / 60000;
-    const minKalma = Math.min(40, dersSuresi * 0.8);
     const yaklasanUyari = dakikaKaldi > 0 && dakikaKaldi <= 40 && !a.gercekGiris && a.lessonSession.bkdsRequired;
     const gelmediUyari = dakikaKaldi < -5 && !a.gercekGiris && a.lessonSession.bkdsRequired && a.status !== 'bkds_muaf';
-    const erkenCikisUyari = a.gercekGiris && a.gercekCikis &&
-      ((new Date(a.gercekCikis).getTime() - new Date(a.gercekGiris).getTime()) / 60000) < minKalma;
+    // Erken çıkış: giriş+çıkış var, ders henüz bitmemiş, 40 dk dolmadan çıkmış
+    const erkenCikisUyari = !!(a.gercekGiris && a.gercekCikis &&
+      new Date(a.gercekCikis) < bitis &&
+      ((new Date(a.gercekCikis).getTime() - new Date(a.gercekGiris).getTime()) / 60000) < 40);
 
     return {
       id: a.id,
@@ -111,9 +111,9 @@ export async function GET(req: NextRequest) {
       statusBg: info.bg,
       yaklasanUyari,
       gelmediUyari,
-      erkenCikisUyari: !!erkenCikisUyari,
+      erkenCikisUyari,
       dakikaKaldi: Math.round(dakikaKaldi),
-      minKalmaSuresi: Math.round(minKalma),
+      minKalmaSuresi: 40,
     };
   });
 
