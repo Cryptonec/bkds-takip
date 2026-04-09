@@ -167,15 +167,18 @@ export default function ProgramPage() {
   const weekDates = getWeekDates(weekRef);
 
   const loadStudents = useCallback(async () => {
-    const res = await fetch('/api/ogrenciler');
-    const data: Student[] = await res.json();
-    const seen = new Set<string>();
-    setStudents(data.filter(s => {
-      const key = s.adSoyad.toLowerCase().trim();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }));
+    try {
+      const res = await fetch('/api/ogrenciler');
+      if (!res.ok) return;
+      const data: Student[] = await res.json();
+      const seen = new Set<string>();
+      setStudents(data.filter(s => {
+        const key = s.adSoyad.toLowerCase().trim();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }));
+    } catch {}
   }, []);
 
   useEffect(() => { loadStudents(); }, [loadStudents]);
