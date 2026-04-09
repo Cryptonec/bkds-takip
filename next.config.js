@@ -5,6 +5,7 @@ const nextConfig = {
   output: 'standalone',
   experimental: {
     serverComponentsExternalPackages: ['@prisma/client'],
+    instrumentationHook: true,
   },
   webpack(config) {
     config.resolve.alias['@'] = path.resolve(__dirname, 'src');

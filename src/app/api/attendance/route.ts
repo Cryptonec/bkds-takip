@@ -10,7 +10,7 @@ import { prisma } from '@/lib/prisma';
 
 const lastBkdsFetchByOrg = new Map<string, number>();
 const recalcInProgress   = new Set<string>();
-const BKDS_FETCH_INTERVAL = 60000;
+const BKDS_FETCH_INTERVAL = 20000;
 
 function capitalizeDerslik(str: string): string {
   return str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
 
   const importJobId = latestJobForToday?.id;
 
-  const [attendances, staffAttendances, alerts, personelLog, toplamDers] = await Promise.all([
+  const [attendances, staffAttendances, alerts, personelLog, toplamDers, bkdsKayitlar] = await Promise.all([
     getLiveAttendance(tarih, organizationId, importJobId),
     getLiveStaffAttendance(tarih, organizationId),
     getActiveAlerts(tarih, organizationId),
@@ -79,6 +79,11 @@ export async function GET(req: NextRequest) {
     importJobId
       ? prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId, importJobId } })
       : prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId } }),
+    prisma.bkdsAggregate.findMany({
+      where: { tarih: dateOnly, organizationId },
+      select: { id: true, studentId: true, adSoyad: true, ilkGiris: true, sonCikis: true },
+      orderBy: { ilkGiris: 'desc' },
+    }),
   ]);
 
   const ogrenciRows = attendances.map((a) => {
@@ -188,6 +193,14 @@ export async function GET(req: NextRequest) {
     dersVar: personelRows.some(r => r.staffId === log.staffId),
   }));
 
+  const bkdsOgrenciKayitlari = bkdsKayitlar.map(b => ({
+    id: b.id,
+    studentId: b.studentId ?? null,
+    adSoyad: b.adSoyad,
+    ilkGiris: b.ilkGiris,
+    sonCikis: b.sonCikis ?? null,
+  }));
+
   return NextResponse.json({
     tarih: tarih.toISOString(),
     ogrenciRows,
@@ -199,6 +212,7 @@ export async function GET(req: NextRequest) {
     bildirimler,
     tumPersonelGirisler,
     toplamDers,
+    bkdsOgrenciKayitlari,
     updatedAt: now.toISOString(),
   });
 }
