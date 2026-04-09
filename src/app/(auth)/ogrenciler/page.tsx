@@ -18,8 +18,9 @@ export default function OgrencilerPage() {
   const [form, setForm] = useState({ adSoyad: '', ogrenciNo: '' });
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<{ created: number; updated: number } | null>(null);
+  const [importResult, setImportResult] = useState<{ created: number; updated: number; deletedDups?: number } | null>(null);
   const [deduping, setDeduping] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -48,12 +49,20 @@ export default function OgrencilerPage() {
   }
 
   async function handleDedup() {
-    if (!confirm('Yinelenen öğrenci kayıtları silinecek ve junk başlıklar temizlenecek. Devam edilsin mi?')) return;
+    if (!confirm('Yinelenen öğrenci kayıtları silinecek. Devam edilsin mi?')) return;
     setDeduping(true);
     const res = await fetch('/api/ogrenciler/dedup', { method: 'POST' });
     const data = await res.json();
     alert(`Temizlendi: ${data.deletedDups} yinelenen, ${data.deletedJunk} geçersiz kayıt silindi.`);
     setDeduping(false);
+    load();
+  }
+
+  async function handleDelete(id: string, adSoyad: string) {
+    if (!confirm(`"${adSoyad}" silinecek. Emin misiniz?`)) return;
+    setDeletingId(id);
+    await fetch(`/api/ogrenciler/${id}`, { method: 'DELETE' });
+    setDeletingId(null);
     load();
   }
 
@@ -86,7 +95,7 @@ export default function OgrencilerPage() {
         body: JSON.stringify({ names }),
       });
       const data = await res.json();
-      setImportResult({ created: data.created ?? 0, updated: data.updated ?? 0 });
+      setImportResult({ created: data.created ?? 0, updated: data.updated ?? 0, deletedDups: data.deletedDups ?? 0 });
       load();
     } catch {
       alert('Dosya okunamadı.');
@@ -141,8 +150,9 @@ export default function OgrencilerPage() {
       {importResult && (
         <div className="mb-4 flex items-center gap-2 bg-green-50 border border-green-200 text-green-800 text-sm px-4 py-3 rounded-xl">
           <UserCheck className="w-4 h-4 shrink-0" />
-          İçe aktarma tamamlandı: <strong>{importResult.created} yeni öğrenci</strong> eklendi,{' '}
-          <strong>{importResult.updated} kayıt</strong> güncellendi.
+          İçe aktarma tamamlandı: <strong>{importResult.created} yeni</strong> eklendi,{' '}
+          <strong>{importResult.updated} güncellendi</strong>
+          {(importResult.deletedDups ?? 0) > 0 && <>, <strong>{importResult.deletedDups} yinelenen</strong> temizlendi</>}.
           <button onClick={() => setImportResult(null)} className="ml-auto text-green-600 hover:text-green-900">✕</button>
         </div>
       )}
@@ -213,6 +223,7 @@ export default function OgrencilerPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Öğrenci No</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Normalize İsim</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Durum</th>
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -231,6 +242,18 @@ export default function OgrencilerPage() {
                         <UserX className="w-3 h-3" /> Pasif
                       </span>
                     )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => handleDelete(s.id, s.adSoyad)}
+                      disabled={deletingId === s.id}
+                      className="text-gray-300 hover:text-red-500 transition-colors disabled:opacity-50"
+                    >
+                      {deletingId === s.id
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <Trash2 className="w-4 h-4" />
+                      }
+                    </button>
                   </td>
                 </tr>
               ))}

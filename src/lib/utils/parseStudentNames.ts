@@ -15,13 +15,20 @@ function nh(s: string) {
     .replace(/ı/g, 'i').replace(/i̇/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c');
 }
 
-// Öğrenci olmayan bilinen başlık/junk değerleri
-const JUNK = new Set([
+// Öğrenci olmayan bilinen başlık/junk değerleri (tam eşleşme)
+const JUNK_EXACT = new Set([
   'sira', 'no', 'sira no', 'ogrenci no', 'tc', 'tc no', 'tc kimlik',
   'adi', 'soyadi', 'ad', 'soyad', 'adi soyadi', 'ad soyad',
   'ogrenci listesi', 'ogrenci bilgileri', 'ogrenciler',
-  'isim', 'isim soyisim', 'sinif', 'tarih',
+  'isim', 'isim soyisim', 'sinif', 'tarih', 'aciklama',
 ]);
+
+// Bu kelimeleri içeriyorsa kurum/başlık satırıdır
+const JUNK_WORDS = [
+  'rehberlik', 'arastirma', 'merkezi', 'mudurlugu', 'mudürlüğü',
+  'ilkokul', 'ortaokul', 'anadolu', 'lisesi', 'universitesi',
+  'hizmetleri', 'egitim bolgesi',
+];
 
 export function parseStudentNamesFromSheet(rows: unknown[][]): string[] {
   if (rows.length === 0) return [];
@@ -64,23 +71,26 @@ export function parseStudentNamesFromSheet(rows: unknown[][]): string[] {
     } else if (fullIdx !== -1) {
       name = cells[fullIdx] ?? '';
     } else {
-      // Başlık bulunamadıysa: ilk sütun sıra numarasıysa 2+3. sütunu dene
+      // Başlık bulunamadıysa: ilk sütun sıra numarasıysa D+E sütunlarını dene (index 3+4)
       const col0 = cells[0] ?? '';
-      if (/^\d+$/.test(col0) && cells.length >= 3) {
-        // Sıra | Adı | Soyadı formatı
+      if (/^\d+$/.test(col0) && cells.length >= 5) {
+        name = `${cells[3] ?? ''} ${cells[4] ?? ''}`.trim();
+      } else if (/^\d+$/.test(col0) && cells.length >= 3) {
         name = `${cells[1] ?? ''} ${cells[2] ?? ''}`.trim();
       } else {
         name = col0;
       }
     }
 
-    // Junk filtresi: çok kısa, sadece rakam, veya bilinen başlık değerleri
+    // Junk filtresi
     const normalized = nh(name);
-    if (
-      name.length > 1 &&
-      !/^\d+$/.test(name) &&
-      !JUNK.has(normalized)
-    ) {
+    const isJunk =
+      name.length < 2 ||
+      /^\d+$/.test(name) ||
+      JUNK_EXACT.has(normalized) ||
+      JUNK_WORDS.some(w => normalized.includes(w));
+
+    if (!isJunk) {
       names.push(name);
     }
   }
