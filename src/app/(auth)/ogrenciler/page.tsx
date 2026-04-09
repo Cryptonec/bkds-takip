@@ -54,21 +54,18 @@ export default function OgrencilerPage() {
     setImportResult(null);
 
     try {
-      const XLSX = await import('xlsx');
+      const [XLSX, { parseStudentNamesFromSheet }] = await Promise.all([
+        import('xlsx'),
+        import('@/lib/utils/parseStudentNames'),
+      ]);
       const buffer = await file.arrayBuffer();
       const wb = XLSX.read(buffer, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-
-      // İlk sütundan isimleri topla (başlık satırı ve sadece sayıdan oluşan satırları atla)
-      const names: string[] = [];
-      for (const row of rows) {
-        const val = String(row[0] ?? '').trim();
-        if (val && val.length > 1 && !/^\d+$/.test(val)) names.push(val);
-      }
+      const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      const names = parseStudentNamesFromSheet(rows);
 
       if (names.length === 0) {
-        alert('Dosyada isim bulunamadı. İlk sütunda ad soyad olduğundan emin olun.');
+        alert('Dosyada isim bulunamadı. "Adı" ve "Soyadı" (veya "Ad Soyad") sütunları olduğundan emin olun.');
         return;
       }
 
