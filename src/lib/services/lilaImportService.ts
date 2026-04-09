@@ -11,19 +11,47 @@ export class LilaImportService {
     const errors: Array<{ row: number; reason: string }> = [];
     let success = 0;
 
-    // Mevcut öğrenci ve personeli önbelleğe al — her satırda DB sorgusu atmaktan kaçın
+    // Öğrenci ve personeli önbelleğe al
     const studentCache = new Map<string, { id: string }>();
     const staffCache   = new Map<string, { id: string }>();
 
-    const existingStudents = await prisma.student.findMany({ where: { organizationId }, select: { id: true, normalizedName: true } });
-    const existingStaff    = await prisma.staff.findMany({   where: { organizationId }, select: { id: true, normalizedName: true } });
+    const [existingStudents, existingStaff] = await Promise.all([
+      prisma.student.findMany({ where: { organizationId }, select: { id: true, normalizedName: true } }),
+      prisma.staff.findMany({   where: { organizationId }, select: { id: true, normalizedName: true } }),
+    ]);
     existingStudents.forEach(s => studentCache.set(s.normalizedName, s));
     existingStaff.forEach(s => staffCache.set(s.normalizedName, s));
+
+    // Import'taki tarihleri belirle — lessonSession ve staffSession cache'i önceden yükle
+    const uniqueTarihler = [...new Set(rows.map(r => r.tarih))].map(t => {
+      const d = new Date(t + 'T00:00:00');
+      d.setHours(0, 0, 0, 0);
+      return d;
+    });
+
+    const [existingLessons, existingStaffSessions] = await Promise.all([
+      prisma.lessonSession.findMany({
+        where: { tarih: { in: uniqueTarihler }, organizationId },
+        select: { studentId: true, staffId: true, baslangic: true, bitis: true },
+      }),
+      prisma.staffSession.findMany({
+        where: { tarih: { in: uniqueTarihler }, organizationId },
+        select: { staffId: true, baslangic: true, bitis: true },
+      }),
+    ]);
+
+    // Set ile hızlı duplicate kontrolü
+    const lessonSet = new Set(
+      existingLessons.map(l => `${l.studentId}|${l.staffId}|${l.baslangic.getTime()}|${l.bitis.getTime()}`)
+    );
+    const staffSessSet = new Set(
+      existingStaffSessions.map(s => `${s.staffId}|${s.baslangic.getTime()}|${s.bitis.getTime()}`)
+    );
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       try {
-        await this.processRow(row, importJobId, organizationId, studentCache, staffCache);
+        await this.processRow(row, importJobId, organizationId, studentCache, staffCache, lessonSet, staffSessSet);
         success++;
       } catch (err: any) {
         errors.push({ row: i + 2, reason: err.message ?? 'Bilinmeyen hata' });
@@ -45,6 +73,8 @@ export class LilaImportService {
     organizationId: string,
     studentCache: Map<string, { id: string }>,
     staffCache: Map<string, { id: string }>,
+    lessonSet: Set<string>,
+    staffSessSet: Set<string>,
   ): Promise<void> {
     // Öğrenci bul veya oluştur (önbellekten)
     const normOgrenci = normalizeName(row.ogrenciAdi);
@@ -72,11 +102,9 @@ export class LilaImportService {
     const tarihDate = new Date(baslangic);
     tarihDate.setHours(0, 0, 0, 0);
 
-    // LessonSession — duplicate önle
-    const existing = await prisma.lessonSession.findFirst({
-      where: { studentId: student.id, staffId: staff.id, baslangic, bitis, organizationId },
-    });
-    if (!existing) {
+    // LessonSession — Set ile hızlı duplicate kontrolü (findFirst yerine)
+    const lKey = `${student.id}|${staff.id}|${baslangic.getTime()}|${bitis.getTime()}`;
+    if (!lessonSet.has(lKey)) {
       await prisma.lessonSession.create({
         data: {
           studentId: student.id,
@@ -90,13 +118,12 @@ export class LilaImportService {
           organizationId,
         },
       });
+      lessonSet.add(lKey);
     }
 
-    // StaffSession — her öğretmen+tarih+saat kombinasyonu için 1 kayıt
-    const existingStaff = await prisma.staffSession.findFirst({
-      where: { staffId: staff.id, baslangic, bitis, organizationId },
-    });
-    if (!existingStaff) {
+    // StaffSession — Set ile hızlı duplicate kontrolü
+    const sKey = `${staff.id}|${baslangic.getTime()}|${bitis.getTime()}`;
+    if (!staffSessSet.has(sKey)) {
       await prisma.staffSession.create({
         data: {
           staffId: staff.id,
@@ -107,6 +134,7 @@ export class LilaImportService {
           organizationId,
         },
       });
+      staffSessSet.add(sKey);
     }
   }
 }

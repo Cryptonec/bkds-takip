@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { lilaImportService } from '@/lib/services/lilaImportService';
+import { recalculateAttendance, recalculateStaffAttendance } from '@/lib/services/attendanceService';
 import type { LilaImportRow } from '@/types';
 
 export async function POST(req: NextRequest) {
@@ -43,6 +44,13 @@ export async function POST(req: NextRequest) {
         completedAt: new Date(),
       },
     });
+
+    // Import sonrası attendance hesapla — canlı takip hemen güncel görünsün
+    const today = new Date();
+    Promise.all([
+      recalculateAttendance(today, organizationId),
+      recalculateStaffAttendance(today, organizationId),
+    ]).catch(e => console.error('[lila import] recalculate hatası:', e));
 
     return NextResponse.json({ jobId: job.id, success, errors: errors.length, errorDetails: errors });
   } catch (err: any) {

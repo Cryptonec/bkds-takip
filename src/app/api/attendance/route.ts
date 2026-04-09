@@ -8,7 +8,8 @@ import { getStaffStatusInfo } from '@/lib/services/staffAttendanceEngine';
 import { getBkdsService } from '@/lib/services/bkdsProviderService';
 import { prisma } from '@/lib/prisma';
 
-let lastBkdsFetch = 0;
+const lastBkdsFetchByOrg = new Map<string, number>();
+const recalcInProgress   = new Set<string>();
 const BKDS_FETCH_INTERVAL = 60000;
 
 function capitalizeDerslik(str: string): string {
@@ -30,11 +31,13 @@ export async function GET(req: NextRequest) {
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
-  const shouldFetch = (now.getTime() - lastBkdsFetch) >= BKDS_FETCH_INTERVAL;
-  if (shouldFetch) {
-    lastBkdsFetch = now.getTime();
+  const lastFetch = lastBkdsFetchByOrg.get(organizationId) ?? 0;
+  const shouldFetch = (now.getTime() - lastFetch) >= BKDS_FETCH_INTERVAL;
+  if (shouldFetch && !recalcInProgress.has(organizationId)) {
+    lastBkdsFetchByOrg.set(organizationId, now.getTime());
     // Arka planda çalıştır — cevabı bekletme
     (async () => {
+      recalcInProgress.add(organizationId);
       try {
         const service = getBkdsService(organizationId);
         const fetchPromise = service.fetchToday().then(records => service.saveAndAggregate(records, tarih));
@@ -42,9 +45,13 @@ export async function GET(req: NextRequest) {
       } catch (err) {
         console.error('[Attendance API] BKDS hatası:', err);
       }
-      await recalculateAttendance(tarih, organizationId);
-      await recalculateStaffAttendance(tarih, organizationId);
-      await generateAlerts(tarih, organizationId);
+      try {
+        await recalculateAttendance(tarih, organizationId);
+        await recalculateStaffAttendance(tarih, organizationId);
+        await generateAlerts(tarih, organizationId);
+      } finally {
+        recalcInProgress.delete(organizationId);
+      }
     })();
   }
 

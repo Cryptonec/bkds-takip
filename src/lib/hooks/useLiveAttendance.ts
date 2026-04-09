@@ -157,6 +157,10 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
   const [yeniPersonelCikis, setYeniPersonelCikis] = useState<Array<{id:string;ad:string;derslik?:string}>>([]);
 
 const isFirstFetch = useRef(true);
+  // Sayfa açılış zamanı — bu andan önce başlamış dersler için retroaktif bildirim gösterme
+  const pageLoadTime = useRef(new Date());
+  // Import sonrası sessiz senkronizasyon: ders sayısı büyük atlarsa bildirimleri sessizce güncelle
+  const prevToplamDers = useRef(0);
 
   const fetchData = useCallback(async () => {
     // Gün değişmişse tüm bildirimleri sıfırla
@@ -169,6 +173,8 @@ const isFirstFetch = useRef(true);
       prevTumGirisKeys.current = new Set();
       prevTumCikisKeys.current = new Set();
       isFirstFetch.current = true;
+      pageLoadTime.current = new Date();
+      prevToplamDers.current = 0;
     }
 
     try {
@@ -204,7 +210,11 @@ const isFirstFetch = useRef(true);
         }
       }
 
-      if (!isFirstFetch.current) {
+      // Import algılama: ders sayısı önemli ölçüde artmışsa sessiz senkronizasyon yap
+      const importDetected = !isFirstFetch.current &&
+        json.toplamDers > prevToplamDers.current + 3;
+
+      if (!isFirstFetch.current && !importDetected) {
         // --- Yeni personel girişleri ---
         const yeniPG: Array<{id:string;ad:string;derslik?:string}> = [];
         for (const [key, val] of tumGirisMap.entries()) {
@@ -264,7 +274,16 @@ const isFirstFetch = useRef(true);
         }
 
         // --- Uyarı bildirimleri ---
-        const yeniB = json.bildirimler.filter(b => !prevBildirimIds.current.has(b.id));
+        // Sayfa açılmadan önce başlamış dersler için retroaktif bildirim gösterme
+        const retroaktifSinir = new Date(pageLoadTime.current.getTime() - 5 * 60 * 1000);
+        const yeniB = json.bildirimler.filter(b => {
+          if (prevBildirimIds.current.has(b.id)) return false;
+          // gelmedi / erken_cikis: ders sayfa açıldıktan sonra başladıysa göster
+          if (b.tip === 'gelmedi' || b.tip === 'erken_cikis') {
+            if (new Date(b.baslangic) < retroaktifSinir) return false;
+          }
+          return true;
+        });
         if (yeniB.length > 0) {
           setYeniBildirimler(prev => [...prev, ...yeniB]);
           playBeep(yeniB.some(b => b.severity === 'kritik') ? 'kritik' : 'uyari');
@@ -278,6 +297,8 @@ const isFirstFetch = useRef(true);
           }
         }
       }
+
+      prevToplamDers.current = json.toplamDers;
 
       // Ref'leri güncelle — her fetch'te
       // Giriş/çıkış: mevcut API durumunu yansıt (gercekGiris sonradan silinebilir)
