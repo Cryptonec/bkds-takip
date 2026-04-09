@@ -11,10 +11,19 @@ export class LilaImportService {
     const errors: Array<{ row: number; reason: string }> = [];
     let success = 0;
 
+    // Mevcut öğrenci ve personeli önbelleğe al — her satırda DB sorgusu atmaktan kaçın
+    const studentCache = new Map<string, { id: string }>();
+    const staffCache   = new Map<string, { id: string }>();
+
+    const existingStudents = await prisma.student.findMany({ where: { organizationId }, select: { id: true, normalizedName: true } });
+    const existingStaff    = await prisma.staff.findMany({   where: { organizationId }, select: { id: true, normalizedName: true } });
+    existingStudents.forEach(s => studentCache.set(s.normalizedName, s));
+    existingStaff.forEach(s => staffCache.set(s.normalizedName, s));
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       try {
-        await this.processRow(row, importJobId, organizationId);
+        await this.processRow(row, importJobId, organizationId, studentCache, staffCache);
         success++;
       } catch (err: any) {
         errors.push({ row: i + 2, reason: err.message ?? 'Bilinmeyen hata' });
@@ -30,23 +39,31 @@ export class LilaImportService {
     return { success, errors };
   }
 
-  private async processRow(row: LilaImportRow, importJobId: string, organizationId: string): Promise<void> {
-    // Öğrenci bul veya oluştur
+  private async processRow(
+    row: LilaImportRow,
+    importJobId: string,
+    organizationId: string,
+    studentCache: Map<string, { id: string }>,
+    staffCache: Map<string, { id: string }>,
+  ): Promise<void> {
+    // Öğrenci bul veya oluştur (önbellekten)
     const normOgrenci = normalizeName(row.ogrenciAdi);
-    let student = await prisma.student.findFirst({ where: { normalizedName: normOgrenci, organizationId } });
+    let student = studentCache.get(normOgrenci);
     if (!student) {
       student = await prisma.student.create({
         data: { adSoyad: row.ogrenciAdi.trim(), normalizedName: normOgrenci, organizationId },
       });
+      studentCache.set(normOgrenci, student);
     }
 
-    // Öğretmen bul veya oluştur
+    // Öğretmen bul veya oluştur (önbellekten)
     const normOgretmen = normalizeName(row.ogretmenAdi);
-    let staff = await prisma.staff.findFirst({ where: { normalizedName: normOgretmen, organizationId } });
+    let staff = staffCache.get(normOgretmen);
     if (!staff) {
       staff = await prisma.staff.create({
         data: { adSoyad: row.ogretmenAdi.trim(), normalizedName: normOgretmen, organizationId },
       });
+      staffCache.set(normOgretmen, staff);
     }
 
     const { normalized: derslikNorm, bkdsRequired } = normalizeDerslik(row.derslik);
