@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, UserCheck, UserX, Upload, Loader2 } from 'lucide-react';
+import { Search, Plus, UserCheck, UserX, Upload, Loader2, Trash2 } from 'lucide-react';
 
 interface Student {
   id: string;
@@ -19,6 +19,7 @@ export default function OgrencilerPage() {
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ created: number; updated: number } | null>(null);
+  const [deduping, setDeduping] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -43,6 +44,16 @@ export default function OgrencilerPage() {
     setForm({ adSoyad: '', ogrenciNo: '' });
     setShowForm(false);
     setSaving(false);
+    load();
+  }
+
+  async function handleDedup() {
+    if (!confirm('Yinelenen öğrenci kayıtları silinecek ve junk başlıklar temizlenecek. Devam edilsin mi?')) return;
+    setDeduping(true);
+    const res = await fetch('/api/ogrenciler/dedup', { method: 'POST' });
+    const data = await res.json();
+    alert(`Temizlendi: ${data.deletedDups} yinelenen, ${data.deletedJunk} geçersiz kayıt silindi.`);
+    setDeduping(false);
     load();
   }
 
@@ -99,6 +110,14 @@ export default function OgrencilerPage() {
             className="hidden"
             onChange={handleImportFile}
           />
+          <button
+            onClick={handleDedup}
+            disabled={deduping}
+            className="flex items-center gap-2 border border-red-200 hover:bg-red-50 text-red-600 text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {deduping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            Tekrarlananları Temizle
+          </button>
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={importing}

@@ -2,50 +2,85 @@
  * Excel/CSV'den öğrenci adlarını parse eder.
  *
  * Desteklenen formatlar:
- *  - Ayrı "Adı" + "Soyadı" sütunları  → birleştirilir
- *  - "Ad Soyad" / "Adı Soyadı" gibi tek sütun
- *  - Başlık yok, ilk sütun ad soyad
+ *  - SIRA | ADI | SOYADI  (Rehapp/okul listesi tipik formatı)
+ *  - Ayrı "Adı" + "Soyadı" sütunları
+ *  - "Ad Soyad" / "Adı Soyadı" tek sütun
+ *  - Başlıksız, ilk sütun ad soyad
  */
+
+// Başlık karşılaştırması için Türkçe normalize
+function nh(s: string) {
+  return s.toLowerCase()
+    .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
+    .replace(/ı/g, 'i').replace(/i̇/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c');
+}
+
+// Öğrenci olmayan bilinen başlık/junk değerleri
+const JUNK = new Set([
+  'sira', 'no', 'sira no', 'ogrenci no', 'tc', 'tc no', 'tc kimlik',
+  'adi', 'soyadi', 'ad', 'soyad', 'adi soyadi', 'ad soyad',
+  'ogrenci listesi', 'ogrenci bilgileri', 'ogrenciler',
+  'isim', 'isim soyisim', 'sinif', 'tarih',
+]);
+
 export function parseStudentNamesFromSheet(rows: unknown[][]): string[] {
   if (rows.length === 0) return [];
 
-  const normalize = (s: string) =>
-    s.toLowerCase().replace(/[ığüşöç]/g, (c) =>
-      ({ ı: 'i', ğ: 'g', ü: 'u', ş: 's', ö: 'o', ç: 'c' }[c] ?? c)
+  const toStr = (v: unknown) => String(v ?? '').trim();
+
+  // İlk 10 satırı tarayarak başlık satırını bul
+  let headerRowIdx = -1;
+  let adiIdx = -1, soyadiIdx = -1, fullIdx = -1;
+
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const cells = rows[i].map(toStr);
+    const normed = cells.map(nh);
+
+    const ai = normed.findIndex(h => h === 'adi' || h === 'ad');
+    const si = normed.findIndex(h => h === 'soyadi' || h === 'soyad');
+    const fi = normed.findIndex(h =>
+      h.includes('adi soyadi') || h === 'ad soyad' || h === 'adsoyad' ||
+      h.includes('ogrenci adi') || h === 'isim'
     );
 
-  // Başlık satırı olup olmadığını kontrol et
-  const firstRow = rows[0].map((c) => String(c ?? '').trim());
-  const normHeaders = firstRow.map(normalize);
+    if (ai !== -1 || si !== -1 || fi !== -1) {
+      headerRowIdx = i;
+      adiIdx   = ai;
+      soyadiIdx = si;
+      fullIdx  = fi;
+      break;
+    }
+  }
 
-  const adiIdx   = normHeaders.findIndex(h => h === 'adi' || h === 'ad');
-  const soyadiIdx = normHeaders.findIndex(h => h === 'soyadi' || h === 'soyad');
-  const fullIdx  = normHeaders.findIndex(h =>
-    h.includes('ad soyad') || h.includes('adi soyadi') || h.includes('adsoyad') ||
-    h.includes('isim') || h === 'ogrenci' || h.includes('ogrenci adi')
-  );
-
-  const hasHeader = adiIdx !== -1 || soyadiIdx !== -1 || fullIdx !== -1;
-  const dataRows  = hasHeader ? rows.slice(1) : rows;
-
+  const dataRows = headerRowIdx >= 0 ? rows.slice(headerRowIdx + 1) : rows;
   const names: string[] = [];
 
   for (const row of dataRows) {
-    const cells = row.map((c) => String(c ?? '').trim());
+    const cells = row.map(toStr);
 
     let name = '';
     if (adiIdx !== -1 && soyadiIdx !== -1) {
-      const adi   = cells[adiIdx]   ?? '';
-      const soyad = cells[soyadiIdx] ?? '';
-      name = `${adi} ${soyad}`.trim();
+      name = `${cells[adiIdx] ?? ''} ${cells[soyadiIdx] ?? ''}`.trim();
     } else if (fullIdx !== -1) {
       name = cells[fullIdx] ?? '';
     } else {
-      name = cells[0] ?? '';
+      // Başlık bulunamadıysa: ilk sütun sıra numarasıysa 2+3. sütunu dene
+      const col0 = cells[0] ?? '';
+      if (/^\d+$/.test(col0) && cells.length >= 3) {
+        // Sıra | Adı | Soyadı formatı
+        name = `${cells[1] ?? ''} ${cells[2] ?? ''}`.trim();
+      } else {
+        name = col0;
+      }
     }
 
-    // Sadece sayıdan oluşan ve çok kısa girişleri atla
-    if (name.length > 1 && !/^\d+$/.test(name)) {
+    // Junk filtresi: çok kısa, sadece rakam, veya bilinen başlık değerleri
+    const normalized = nh(name);
+    if (
+      name.length > 1 &&
+      !/^\d+$/.test(name) &&
+      !JUNK.has(normalized)
+    ) {
       names.push(name);
     }
   }
