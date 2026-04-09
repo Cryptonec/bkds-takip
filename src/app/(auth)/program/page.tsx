@@ -172,7 +172,8 @@ export default function ProgramPage() {
     setLoading(true);
     try {
       const res = await fetch(`/api/program?tarih=${selectedDay}`);
-      setLessons(await res.json());
+      const data = await res.json();
+      setLessons(Array.isArray(data) ? data : []);
     } finally {
       setLoading(false);
     }
