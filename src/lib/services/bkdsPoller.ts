@@ -55,12 +55,12 @@ export async function startAllPollers(): Promise<void> {
   const orgs = await prisma.organization.findMany({
     where: { active: true },
     include: {
-      bkdsCredential: { select: { pollInterval: true } },
+      credentials: { select: { pollInterval: true } },
     },
   });
 
   for (const org of orgs) {
-    const interval = org.bkdsCredential?.pollInterval ?? Number(process.env.BKDS_POLL_INTERVAL ?? '60000');
+    const interval = org.credentials[0]?.pollInterval ?? Number(process.env.BKDS_POLL_INTERVAL ?? '60000');
     startPollingForOrg(org.id, interval);
   }
 }
