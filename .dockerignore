@@ -7,3 +7,8 @@ npm-debug.log
 !.env.example
 README.md
 .dockerignore
+kurulum.bat
+kurulum.sh
+KURULUM.md
+fly.toml
+.setup_done

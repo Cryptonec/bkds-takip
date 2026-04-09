@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bkds_takip
+      POSTGRES_USER: bkds
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bkds -d bkds_takip"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      # DATABASE_URL burada üretilir — .env'e yazmanıza gerek yok
+      DATABASE_URL: postgresql://bkds:${DB_PASSWORD}@db:5432/bkds_takip
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
