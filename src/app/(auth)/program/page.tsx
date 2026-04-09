@@ -59,14 +59,15 @@ function isEvdeDestek(lesson: Lesson) {
 
 /** Devam durumuna göre kart rengi */
 function getLessonColors(lesson: Lesson, evde: boolean) {
-  if (evde) return {
-    card: 'bg-amber-500 hover:bg-amber-600 text-white',
-    time: 'text-amber-100',
-    btn: 'text-amber-200 hover:text-white',
-  };
-
   const status = lesson.attendance?.status;
   const hasGiris = !!lesson.attendance?.gercekGiris;
+
+  // Evde destek = BKDS muaf → gri
+  if (evde || status === 'bkds_muaf') return {
+    card: 'bg-gray-400 hover:bg-gray-500 text-white',
+    time: 'text-gray-200',
+    btn: 'text-gray-300 hover:text-white',
+  };
 
   // Tamamlandı: nizami giriş + çıkış
   if (status === 'tamamlandi') return {
@@ -104,12 +105,6 @@ function getLessonColors(lesson: Lesson, evde: boolean) {
     time: 'text-yellow-700',
     btn: 'text-yellow-600 hover:text-yellow-900',
   };
-  // BKDS muaf
-  if (status === 'bkds_muaf') return {
-    card: 'bg-gray-400 hover:bg-gray-500 text-white',
-    time: 'text-gray-200',
-    btn: 'text-gray-300 hover:text-white',
-  };
   // Varsayılan: planlandı / bekliyor
   return {
     card: 'bg-blue-600 hover:bg-blue-700 text-white',
@@ -120,14 +115,13 @@ function getLessonColors(lesson: Lesson, evde: boolean) {
 
 const LEGEND = [
   { color: 'bg-blue-600',   label: 'Planlandı' },
-  { color: 'bg-yellow-400', label: 'Gecikiyor',      textCls: 'text-yellow-900' },
+  { color: 'bg-yellow-400', label: 'Gecikiyor' },
   { color: 'bg-red-600',    label: 'Gelmedi' },
   { color: 'bg-teal-600',   label: 'Derste' },
   { color: 'bg-green-600',  label: 'Tamamlandı' },
   { color: 'bg-orange-500', label: 'Erken çıkış' },
   { color: 'bg-purple-600', label: 'Çıkış eksik' },
-  { color: 'bg-gray-400',   label: 'BKDS muaf' },
-  { color: 'bg-amber-500',  label: 'Evde destek' },
+  { color: 'bg-gray-400',   label: 'Evde destek / BKDS muaf' },
 ];
 
 /** G ✓ / Ç ✓ giriş-çıkış rozeti */
@@ -405,15 +399,15 @@ export default function ProgramPage() {
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors shrink-0',
                 showEvde
-                  ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
-                  : 'bg-gray-100 border-gray-200 text-gray-400 hover:bg-gray-200'
+                  ? 'bg-gray-100 border-gray-300 text-gray-600 hover:bg-gray-200'
+                  : 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100'
               )}
             >
               <Home className="w-3.5 h-3.5" />
               Evde Destek {showEvde ? 'Gizle' : 'Göster'}
-              <span className={cn('px-1.5 py-0.5 rounded-full text-[10px] font-bold',
-                showEvde ? 'bg-amber-200 text-amber-800' : 'bg-gray-200 text-gray-500'
-              )}>{evdeCount}</span>
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-gray-200 text-gray-600">
+                {evdeCount}
+              </span>
             </button>
           )}
 
