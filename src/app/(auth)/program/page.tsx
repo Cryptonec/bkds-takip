@@ -54,8 +54,81 @@ function fmtShort(d: string) {
 }
 
 function isEvdeDestek(lesson: Lesson) {
-  return !lesson.bkdsRequired || lesson.derslik.includes('evde destek');
+  return !lesson.bkdsRequired || lesson.derslik.toLowerCase().includes('evde destek');
 }
+
+/** Devam durumuna göre kart rengi */
+function getLessonColors(lesson: Lesson, evde: boolean) {
+  if (evde) return {
+    card: 'bg-amber-500 hover:bg-amber-600 text-white',
+    time: 'text-amber-100',
+    btn: 'text-amber-200 hover:text-white',
+  };
+
+  const status = lesson.attendance?.status;
+  const hasGiris = !!lesson.attendance?.gercekGiris;
+
+  // Tamamlandı: nizami giriş + çıkış
+  if (status === 'tamamlandi') return {
+    card: 'bg-green-600 hover:bg-green-700 text-white',
+    time: 'text-green-200',
+    btn: 'text-green-300 hover:text-white',
+  };
+  // Erken çıkış
+  if (status === 'erken_cikis') return {
+    card: 'bg-orange-500 hover:bg-orange-600 text-white',
+    time: 'text-orange-100',
+    btn: 'text-orange-200 hover:text-white',
+  };
+  // Çıkış kaydı eksik (girdi ama çıkış yok, ders bitti)
+  if (status === 'cikis_eksik') return {
+    card: 'bg-purple-600 hover:bg-purple-700 text-white',
+    time: 'text-purple-200',
+    btn: 'text-purple-300 hover:text-white',
+  };
+  // Derste / geç geldi (giriş var, ders devam ediyor)
+  if (hasGiris || status === 'derste' || status === 'giris_tamam' || status === 'gec_geldi') return {
+    card: 'bg-teal-600 hover:bg-teal-700 text-white',
+    time: 'text-teal-200',
+    btn: 'text-teal-300 hover:text-white',
+  };
+  // Gelmedi / kritik
+  if (status === 'kritik' || status === 'giris_eksik') return {
+    card: 'bg-red-600 hover:bg-red-700 text-white',
+    time: 'text-red-200',
+    btn: 'text-red-300 hover:text-white',
+  };
+  // Gecikiyor (az gecikmiş, henüz kritik değil)
+  if (status === 'gecikiyor') return {
+    card: 'bg-yellow-400 hover:bg-yellow-500 text-yellow-900',
+    time: 'text-yellow-700',
+    btn: 'text-yellow-600 hover:text-yellow-900',
+  };
+  // BKDS muaf
+  if (status === 'bkds_muaf') return {
+    card: 'bg-gray-400 hover:bg-gray-500 text-white',
+    time: 'text-gray-200',
+    btn: 'text-gray-300 hover:text-white',
+  };
+  // Varsayılan: planlandı / bekliyor
+  return {
+    card: 'bg-blue-600 hover:bg-blue-700 text-white',
+    time: 'text-blue-200',
+    btn: 'text-blue-300 hover:text-white',
+  };
+}
+
+const LEGEND = [
+  { color: 'bg-blue-600',   label: 'Planlandı' },
+  { color: 'bg-yellow-400', label: 'Gecikiyor',      textCls: 'text-yellow-900' },
+  { color: 'bg-red-600',    label: 'Gelmedi' },
+  { color: 'bg-teal-600',   label: 'Derste' },
+  { color: 'bg-green-600',  label: 'Tamamlandı' },
+  { color: 'bg-orange-500', label: 'Erken çıkış' },
+  { color: 'bg-purple-600', label: 'Çıkış eksik' },
+  { color: 'bg-gray-400',   label: 'BKDS muaf' },
+  { color: 'bg-amber-500',  label: 'Evde destek' },
+];
 
 /** G ✓ / Ç ✓ giriş-çıkış rozeti */
 function AttBadge({ att }: { att: Attendance | null }) {
@@ -63,16 +136,15 @@ function AttBadge({ att }: { att: Attendance | null }) {
   const giris = att.gercekGiris ? formatTime(att.gercekGiris) : null;
   const cikis = att.gercekCikis ? formatTime(att.gercekCikis) : null;
   if (!giris && !cikis) return null;
-
   return (
     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
       {giris && (
-        <span className="flex items-center gap-0.5 bg-white/20 rounded px-1 py-0.5 text-[10px] font-semibold leading-none">
+        <span className="flex items-center gap-0.5 bg-black/20 rounded px-1 py-0.5 text-[10px] font-semibold leading-none">
           G ✓ {giris}
         </span>
       )}
       {cikis && (
-        <span className="flex items-center gap-0.5 bg-white/20 rounded px-1 py-0.5 text-[10px] font-semibold leading-none">
+        <span className="flex items-center gap-0.5 bg-black/20 rounded px-1 py-0.5 text-[10px] font-semibold leading-none">
           Ç ✓ {cikis}
         </span>
       )}
@@ -91,6 +163,7 @@ export default function ProgramPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [silConfirm, setSilConfirm] = useState<string | null>(null);
   const [showEvde, setShowEvde] = useState(true);
+  const [showLegend, setShowLegend] = useState(false);
   const [addingStudent, setAddingStudent] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ created: number; updated: number } | null>(null);
@@ -102,7 +175,6 @@ export default function ProgramPage() {
   const loadStudents = useCallback(async () => {
     const res = await fetch('/api/ogrenciler');
     const data: Student[] = await res.json();
-    // Aynı isimde iki kayıt varsa tekilleştir
     const seen = new Set<string>();
     setStudents(data.filter(s => {
       const key = s.adSoyad.toLowerCase().trim();
@@ -136,16 +208,12 @@ export default function ProgramPage() {
     e.target.value = '';
     setImporting(true);
     setImportResult(null);
-
     try {
       const formData = new FormData();
       formData.append('file', file);
       const res = await fetch('/api/ogrenciler/import', { method: 'POST', body: formData });
       const data = await res.json();
-      if (!res.ok) {
-        alert(data.error ?? 'Hata oluştu');
-        return;
-      }
+      if (!res.ok) { alert(data.error ?? 'Hata oluştu'); return; }
       setImportResult({ created: data.created ?? 0, updated: data.updated ?? 0 });
       await loadStudents();
     } catch {
@@ -168,7 +236,6 @@ export default function ProgramPage() {
 
   useEffect(() => { loadLessons(); }, [loadLessons]);
 
-  // Seçili gün bugünse 30s'de bir yenile (BKDS güncellemeleri için)
   useEffect(() => {
     if (selectedDay !== todayStr()) return;
     const id = setInterval(loadLessons, 30_000);
@@ -183,24 +250,15 @@ export default function ProgramPage() {
     const student = dragStudentRef.current;
     setDragOver(null);
     if (!student) return;
-
     setSaving(slot);
     const [h, m] = slot.split(':').map(Number);
     const endMin = h * 60 + m + 40;
     const bitisSaati = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
-
     await fetch('/api/program', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        studentId: student.id,
-        tarih: selectedDay,
-        baslangicSaati: slot,
-        bitisSaati,
-        derslik: 'Salon',
-      }),
+      body: JSON.stringify({ studentId: student.id, tarih: selectedDay, baslangicSaati: slot, bitisSaati, derslik: 'Salon' }),
     });
-
     setSaving(null);
     dragStudentRef.current = null;
     loadLessons();
@@ -212,17 +270,13 @@ export default function ProgramPage() {
     loadLessons();
   }
 
-  // Filtrele: evde destek gizliyse çıkar
   const visibleLessons = showEvde ? lessons : lessons.filter(l => !isEvdeDestek(l));
-
-  // Saate göre grupla
   const lessonsBySlot = new Map<string, Lesson[]>();
   for (const l of visibleLessons) {
     const h = new Date(l.baslangic).getHours();
     const slotKey = `${String(h).padStart(2, '0')}:00`;
     lessonsBySlot.set(slotKey, [...(lessonsBySlot.get(slotKey) ?? []), l]);
   }
-
   const evdeCount = lessons.filter(isEvdeDestek).length;
 
   return (
@@ -245,13 +299,7 @@ export default function ProgramPage() {
               >
                 {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
               </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv,.html,.htm"
-                className="hidden"
-                onChange={handleImportFile}
-              />
+              <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.html,.htm" className="hidden" onChange={handleImportFile} />
             </div>
           </div>
           {importResult && (
@@ -265,9 +313,7 @@ export default function ProgramPage() {
               value={studentSearch}
               onChange={e => setStudentSearch(e.target.value)}
               onKeyDown={e => {
-                if (e.key === 'Enter' && studentSearch.trim() && filteredStudents.length === 0) {
-                  addStudent(studentSearch);
-                }
+                if (e.key === 'Enter' && studentSearch.trim() && filteredStudents.length === 0) addStudent(studentSearch);
               }}
               placeholder="Ara veya yeni ekle…"
               className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -294,10 +340,7 @@ export default function ProgramPage() {
               disabled={addingStudent}
               className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-blue-300 text-blue-600 hover:bg-blue-50 text-sm transition-colors disabled:opacity-50"
             >
-              {addingStudent
-                ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                : <Plus className="w-3.5 h-3.5 shrink-0" />
-              }
+              {addingStudent ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" /> : <Plus className="w-3.5 h-3.5 shrink-0" />}
               <span className="truncate">"{studentSearch.trim()}" ekle</span>
             </button>
           )}
@@ -331,10 +374,8 @@ export default function ProgramPage() {
                   onClick={() => { setSelectedDay(date); setWeekRef(date); }}
                   className={cn(
                     'flex flex-col items-center px-3 py-1.5 rounded-lg text-xs font-medium shrink-0 transition-colors',
-                    isSelected
-                      ? 'bg-blue-600 text-white'
-                      : isToday
-                      ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'
+                    isSelected ? 'bg-blue-600 text-white'
+                      : isToday ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'
                       : 'text-gray-500 hover:bg-gray-100'
                   )}
                 >
@@ -376,11 +417,42 @@ export default function ProgramPage() {
             </button>
           )}
 
+          {/* Renk açıklaması toggle */}
+          <button
+            onClick={() => setShowLegend(v => !v)}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors shrink-0',
+              showLegend
+                ? 'bg-gray-100 border-gray-300 text-gray-700'
+                : 'border-gray-200 text-gray-400 hover:bg-gray-50'
+            )}
+          >
+            <span className="flex gap-0.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" />
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />
+              <span className="w-2.5 h-2.5 rounded-full bg-teal-500 inline-block" />
+            </span>
+            Renkler
+          </button>
+
           {loading
             ? <Loader2 className="w-4 h-4 animate-spin text-gray-400 shrink-0" />
             : <span className="text-xs text-gray-400 shrink-0">{visibleLessons.length} ders</span>
           }
         </div>
+
+        {/* Renk açıklamaları */}
+        {showLegend && (
+          <div className="bg-white border-b border-gray-100 px-6 py-2 flex items-center gap-3 flex-wrap shrink-0">
+            <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide shrink-0">Renk Açıklaması:</span>
+            {LEGEND.map(({ color, label, textCls }) => (
+              <span key={label} className="flex items-center gap-1.5 shrink-0">
+                <span className={cn('w-3 h-3 rounded-sm shrink-0', color)} />
+                <span className="text-xs text-gray-600">{label}</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Time grid */}
         <div className="flex-1 overflow-y-auto">
@@ -429,14 +501,13 @@ export default function ProgramPage() {
                     )}
                     {slotLessons.map(l => {
                       const evde = isEvdeDestek(l);
+                      const colors = getLessonColors(l, evde);
                       return (
                         <div
                           key={l.id}
                           className={cn(
                             'flex items-start gap-2 rounded-lg px-3 py-2 text-xs shadow-sm group transition-colors',
-                            evde
-                              ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                              : 'bg-blue-600 hover:bg-blue-700 text-white'
+                            colors.card
                           )}
                         >
                           <div className="min-w-0">
@@ -444,7 +515,7 @@ export default function ProgramPage() {
                               {evde && <Home className="w-3 h-3 shrink-0 opacity-80" />}
                               <p className="font-semibold leading-tight truncate max-w-[140px]">{l.student.adSoyad}</p>
                             </div>
-                            <p className={cn('leading-tight', evde ? 'text-amber-100' : 'text-blue-200')}>
+                            <p className={cn('leading-tight', colors.time)}>
                               {formatTime(l.baslangic)}–{formatTime(l.bitis)}
                             </p>
                             <AttBadge att={l.attendance} />
@@ -457,15 +528,13 @@ export default function ProgramPage() {
                               >Sil</button>
                               <button
                                 onClick={() => setSilConfirm(null)}
-                                className={cn('text-xs px-1', evde ? 'text-amber-200 hover:text-white' : 'text-blue-200 hover:text-white')}
+                                className={cn('text-xs px-1', colors.btn)}
                               >İptal</button>
                             </div>
                           ) : (
                             <button
                               onClick={() => setSilConfirm(l.id)}
-                              className={cn('mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity',
-                                evde ? 'text-amber-200 hover:text-white' : 'text-blue-300 hover:text-white'
-                              )}
+                              className={cn('mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity', colors.btn)}
                             >
                               <X className="w-3.5 h-3.5" />
                             </button>
