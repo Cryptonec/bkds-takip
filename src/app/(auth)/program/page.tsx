@@ -1,9 +1,14 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, ChevronLeft, ChevronRight, X, Loader2, CalendarDays, GripVertical } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, X, Loader2, CalendarDays, GripVertical, Home, Plus, Upload } from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
 
 interface Student { id: string; adSoyad: string; }
+interface Attendance {
+  status: string;
+  gercekGiris: string | null;
+  gercekCikis: string | null;
+}
 interface Lesson {
   id: string;
   student: { id: string; adSoyad: string };
@@ -12,6 +17,7 @@ interface Lesson {
   bitis: string;
   derslik: string;
   bkdsRequired: boolean;
+  attendance: Attendance | null;
 }
 
 const TIME_SLOTS = Array.from({ length: 13 }, (_, i) => {
@@ -47,6 +53,33 @@ function fmtShort(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
 }
 
+function isEvdeDestek(lesson: Lesson) {
+  return !lesson.bkdsRequired || lesson.derslik.includes('evde destek');
+}
+
+/** G ✓ / Ç ✓ giriş-çıkış rozeti */
+function AttBadge({ att }: { att: Attendance | null }) {
+  if (!att) return null;
+  const giris = att.gercekGiris ? formatTime(att.gercekGiris) : null;
+  const cikis = att.gercekCikis ? formatTime(att.gercekCikis) : null;
+  if (!giris && !cikis) return null;
+
+  return (
+    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+      {giris && (
+        <span className="flex items-center gap-0.5 bg-white/20 rounded px-1 py-0.5 text-[10px] font-semibold leading-none">
+          G ✓ {giris}
+        </span>
+      )}
+      {cikis && (
+        <span className="flex items-center gap-0.5 bg-white/20 rounded px-1 py-0.5 text-[10px] font-semibold leading-none">
+          Ç ✓ {cikis}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function ProgramPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [studentSearch, setStudentSearch] = useState('');
@@ -57,28 +90,90 @@ export default function ProgramPage() {
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [silConfirm, setSilConfirm] = useState<string | null>(null);
+  const [showEvde, setShowEvde] = useState(true);
+  const [addingStudent, setAddingStudent] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ created: number; updated: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const dragStudentRef = useRef<Student | null>(null);
 
   const weekDates = getWeekDates(weekRef);
 
-  useEffect(() => {
-    fetch('/api/ogrenciler?aktif=true')
-      .then(r => r.json())
-      .then(setStudents)
-      .catch(() => {});
+  const loadStudents = useCallback(async () => {
+    const res = await fetch('/api/ogrenciler');
+    const data: Student[] = await res.json();
+    // Aynı isimde iki kayıt varsa tekilleştir
+    const seen = new Set<string>();
+    setStudents(data.filter(s => {
+      const key = s.adSoyad.toLowerCase().trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }));
   }, []);
+
+  useEffect(() => { loadStudents(); }, [loadStudents]);
+
+  async function addStudent(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setAddingStudent(true);
+    const res = await fetch('/api/ogrenciler', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adSoyad: trimmed }),
+    });
+    if (res.ok) {
+      setStudentSearch('');
+      await loadStudents();
+    }
+    setAddingStudent(false);
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setImporting(true);
+    setImportResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/ogrenciler/import', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error ?? 'Hata oluştu');
+        return;
+      }
+      setImportResult({ created: data.created ?? 0, updated: data.updated ?? 0 });
+      await loadStudents();
+    } catch {
+      alert('Dosya gönderilemedi.');
+    } finally {
+      setImporting(false);
+    }
+  }
 
   const loadLessons = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(`/api/program?tarih=${selectedDay}`);
-      setLessons(await res.json());
+      const data = await res.json();
+      setLessons(Array.isArray(data) ? data : []);
     } finally {
       setLoading(false);
     }
   }, [selectedDay]);
 
   useEffect(() => { loadLessons(); }, [loadLessons]);
+
+  // Seçili gün bugünse 30s'de bir yenile (BKDS güncellemeleri için)
+  useEffect(() => {
+    if (selectedDay !== todayStr()) return;
+    const id = setInterval(loadLessons, 30_000);
+    return () => clearInterval(id);
+  }, [selectedDay, loadLessons]);
 
   const filteredStudents = students.filter(s =>
     !studentSearch || s.adSoyad.toLowerCase().includes(studentSearch.toLowerCase())
@@ -117,13 +212,18 @@ export default function ProgramPage() {
     loadLessons();
   }
 
-  // Group lessons by start-hour slot
+  // Filtrele: evde destek gizliyse çıkar
+  const visibleLessons = showEvde ? lessons : lessons.filter(l => !isEvdeDestek(l));
+
+  // Saate göre grupla
   const lessonsBySlot = new Map<string, Lesson[]>();
-  for (const l of lessons) {
+  for (const l of visibleLessons) {
     const h = new Date(l.baslangic).getHours();
     const slotKey = `${String(h).padStart(2, '0')}:00`;
     lessonsBySlot.set(slotKey, [...(lessonsBySlot.get(slotKey) ?? []), l]);
   }
+
+  const evdeCount = lessons.filter(isEvdeDestek).length;
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -131,13 +231,45 @@ export default function ProgramPage() {
       {/* Left: Student list */}
       <div className="w-60 shrink-0 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-4 pt-5 pb-3 border-b border-gray-100">
-          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Öğrenciler</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Öğrenciler</p>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                {studentSearch ? `${filteredStudents.length} / ${students.length}` : students.length}
+              </span>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+                title="Excel/CSV'den öğrenci listesi içe aktar"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
+              >
+                {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv,.html,.htm"
+                className="hidden"
+                onChange={handleImportFile}
+              />
+            </div>
+          </div>
+          {importResult && (
+            <p className="text-xs text-green-700 bg-green-50 rounded-lg px-2 py-1 mb-2">
+              ✓ {importResult.created} yeni, {importResult.updated} güncellendi
+            </p>
+          )}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <input
               value={studentSearch}
               onChange={e => setStudentSearch(e.target.value)}
-              placeholder="Ara…"
+              onKeyDown={e => {
+                if (e.key === 'Enter' && studentSearch.trim() && filteredStudents.length === 0) {
+                  addStudent(studentSearch);
+                }
+              }}
+              placeholder="Ara veya yeni ekle…"
               className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -156,7 +288,20 @@ export default function ProgramPage() {
               <span className="truncate">{s.adSoyad}</span>
             </div>
           ))}
-          {filteredStudents.length === 0 && (
+          {filteredStudents.length === 0 && studentSearch.trim().length > 1 && (
+            <button
+              onClick={() => addStudent(studentSearch)}
+              disabled={addingStudent}
+              className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-blue-300 text-blue-600 hover:bg-blue-50 text-sm transition-colors disabled:opacity-50"
+            >
+              {addingStudent
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                : <Plus className="w-3.5 h-3.5 shrink-0" />
+              }
+              <span className="truncate">"{studentSearch.trim()}" ekle</span>
+            </button>
+          )}
+          {filteredStudents.length === 0 && studentSearch.trim().length <= 1 && (
             <p className="text-xs text-gray-400 text-center py-10">Öğrenci bulunamadı</p>
           )}
         </div>
@@ -211,9 +356,29 @@ export default function ProgramPage() {
           )}
 
           <div className="flex-1" />
+
+          {/* Evde destek toggle */}
+          {evdeCount > 0 && (
+            <button
+              onClick={() => setShowEvde(v => !v)}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors shrink-0',
+                showEvde
+                  ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
+                  : 'bg-gray-100 border-gray-200 text-gray-400 hover:bg-gray-200'
+              )}
+            >
+              <Home className="w-3.5 h-3.5" />
+              Evde Destek {showEvde ? 'Gizle' : 'Göster'}
+              <span className={cn('px-1.5 py-0.5 rounded-full text-[10px] font-bold',
+                showEvde ? 'bg-amber-200 text-amber-800' : 'bg-gray-200 text-gray-500'
+              )}>{evdeCount}</span>
+            </button>
+          )}
+
           {loading
-            ? <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-            : <span className="text-xs text-gray-400">{lessons.length} ders</span>
+            ? <Loader2 className="w-4 h-4 animate-spin text-gray-400 shrink-0" />
+            : <span className="text-xs text-gray-400 shrink-0">{visibleLessons.length} ders</span>
           }
         </div>
 
@@ -262,38 +427,52 @@ export default function ProgramPage() {
                         Kaydediliyor…
                       </div>
                     )}
-                    {slotLessons.map(l => (
-                      <div
-                        key={l.id}
-                        className="flex items-center gap-2 bg-blue-600 text-white rounded-lg px-3 py-2 text-xs shadow-sm group hover:bg-blue-700 transition-colors"
-                      >
-                        <div className="min-w-0">
-                          <p className="font-semibold leading-tight truncate max-w-[140px]">{l.student.adSoyad}</p>
-                          <p className="text-blue-200 leading-tight">
-                            {formatTime(l.baslangic)}–{formatTime(l.bitis)}
-                          </p>
-                        </div>
-                        {silConfirm === l.id ? (
-                          <div className="flex items-center gap-1 ml-1">
-                            <button
-                              onClick={() => handleDelete(l.id)}
-                              className="text-xs bg-red-500 hover:bg-red-600 text-white font-medium px-1.5 py-0.5 rounded"
-                            >Sil</button>
-                            <button
-                              onClick={() => setSilConfirm(null)}
-                              className="text-xs text-blue-200 hover:text-white px-1"
-                            >İptal</button>
+                    {slotLessons.map(l => {
+                      const evde = isEvdeDestek(l);
+                      return (
+                        <div
+                          key={l.id}
+                          className={cn(
+                            'flex items-start gap-2 rounded-lg px-3 py-2 text-xs shadow-sm group transition-colors',
+                            evde
+                              ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                              : 'bg-blue-600 hover:bg-blue-700 text-white'
+                          )}
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1">
+                              {evde && <Home className="w-3 h-3 shrink-0 opacity-80" />}
+                              <p className="font-semibold leading-tight truncate max-w-[140px]">{l.student.adSoyad}</p>
+                            </div>
+                            <p className={cn('leading-tight', evde ? 'text-amber-100' : 'text-blue-200')}>
+                              {formatTime(l.baslangic)}–{formatTime(l.bitis)}
+                            </p>
+                            <AttBadge att={l.attendance} />
                           </div>
-                        ) : (
-                          <button
-                            onClick={() => setSilConfirm(l.id)}
-                            className="ml-1 opacity-0 group-hover:opacity-100 text-blue-300 hover:text-white transition-opacity"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
+                          {silConfirm === l.id ? (
+                            <div className="flex items-center gap-1 ml-1 mt-0.5">
+                              <button
+                                onClick={() => handleDelete(l.id)}
+                                className="text-xs bg-red-500 hover:bg-red-600 text-white font-medium px-1.5 py-0.5 rounded"
+                              >Sil</button>
+                              <button
+                                onClick={() => setSilConfirm(null)}
+                                className={cn('text-xs px-1', evde ? 'text-amber-200 hover:text-white' : 'text-blue-200 hover:text-white')}
+                              >İptal</button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setSilConfirm(l.id)}
+                              className={cn('mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity',
+                                evde ? 'text-amber-200 hover:text-white' : 'text-blue-300 hover:text-white'
+                              )}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
