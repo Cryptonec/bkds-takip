@@ -11,8 +11,6 @@ interface Kayit {
   ts: number;
 }
 
-const MAX_NORMAL = 5;
-const MAX_FULLSCREEN = 10;
 
 function calarGiris() {
   try {
@@ -52,7 +50,7 @@ function fmt(iso: string) {
   return new Date(iso).toLocaleTimeString('tr-TR', { hour:'2-digit', minute:'2-digit' });
 }
 
-function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
+function useBildirimEkrani(sesAcik: boolean) {
   // Tek kaynak: tüm giriş ve çıkışları ad→Kayit Map olarak tut
   const girisMapRef = useRef<Map<string,Kayit>>(new Map());
   const cikisMapRef = useRef<Map<string,Kayit>>(new Map());
@@ -60,33 +58,20 @@ function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
   const [cikislar, setCikislar] = useState<Kayit[]>([]);
   const [sonGuncelleme, setSonGuncelleme] = useState('');
   const sesAcikRef = useRef(sesAcik);
-  const maxRef = useRef(max);
   const isFirst = useRef(true);
   const prevGirisHash = useRef('');
   const prevCikisHash = useRef('');
 
   useEffect(() => { sesAcikRef.current = sesAcik; }, [sesAcik]);
-  useEffect(() => { 
-    maxRef.current = max;
-    // max değişince listeyi güncelle
-    commitGiris(false, max);
-    commitCikis(false, max);
-  }, [max]);
 
-  function commitGiris(ses: boolean, maxSayi?: number) {
-    const n = maxSayi ?? maxRef.current;
-    const sorted = [...girisMapRef.current.values()]
-      .sort((a,b) => b.ts - a.ts)
-      .slice(0, n);
+  function commitGiris(ses: boolean) {
+    const sorted = [...girisMapRef.current.values()].sort((a,b) => b.ts - a.ts);
     setGirisler(sorted);
     if (ses && sesAcikRef.current) calarGiris();
   }
 
-  function commitCikis(ses: boolean, maxSayi?: number) {
-    const n = maxSayi ?? maxRef.current;
-    const sorted = [...cikisMapRef.current.values()]
-      .sort((a,b) => b.ts - a.ts)
-      .slice(0, n);
+  function commitCikis(ses: boolean) {
+    const sorted = [...cikisMapRef.current.values()].sort((a,b) => b.ts - a.ts);
     setCikislar(sorted);
     if (ses && sesAcikRef.current) calarCikis();
   }
@@ -96,7 +81,7 @@ function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
       const res = await fetch('/api/attendance');
       if (!res.ok) return;
       const json = await res.json();
-      const ogrenciRows = json.ogrenciRows ?? [];
+      const bkdsKayitlar = json.bkdsOgrenciKayitlari ?? [];
       const personelRows = json.personelRows ?? [];
       const tumPersonel = json.tumPersonelGirisler ?? [];
 
@@ -104,14 +89,14 @@ function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
       const yeniGirisler: Kayit[] = [];
       const yeniCikislar: Kayit[] = [];
 
-      // Öğrenci girişleri
-      ogrenciRows.filter((r:any) => r.gercekGiris).forEach((r:any) => {
-        yeniGirisler.push({ id:`og-${r.ogrenciId}`, tip:'giris', tur:'ogrenci',
-          ad: r.ogrenciAdi, saat: fmt(r.gercekGiris), ts: new Date(r.gercekGiris).getTime() });
+      // BKDS kayıtlarından öğrenci girişleri (dersi olsa da olmasa da)
+      bkdsKayitlar.filter((b:any) => b.ilkGiris).forEach((b:any) => {
+        yeniGirisler.push({ id:`bg-${b.id}`, tip:'giris', tur:'ogrenci',
+          ad: b.adSoyad, saat: fmt(b.ilkGiris), ts: new Date(b.ilkGiris).getTime() });
       });
-      ogrenciRows.filter((r:any) => r.gercekCikis).forEach((r:any) => {
-        yeniCikislar.push({ id:`oc-${r.ogrenciId}`, tip:'cikis', tur:'ogrenci',
-          ad: r.ogrenciAdi, saat: fmt(r.gercekCikis), ts: new Date(r.gercekCikis).getTime() });
+      bkdsKayitlar.filter((b:any) => b.sonCikis).forEach((b:any) => {
+        yeniCikislar.push({ id:`bc-${b.id}`, tip:'cikis', tur:'ogrenci',
+          ad: b.adSoyad, saat: fmt(b.sonCikis), ts: new Date(b.sonCikis).getTime() });
       });
 
       // Personel girişleri
@@ -174,18 +159,13 @@ function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
       if (isFirst.current) {
         yeniGirisler.forEach(k => girisMapRef.current.set(k.ad, k));
         yeniCikislar.forEach(k => cikisMapRef.current.set(k.ad, k));
-        commitGiris(false, max);
-        commitCikis(false, max);
+        commitGiris(false);
+        commitCikis(false);
         isFirst.current = false;
       } else {
         // Sadece yeni kayıt varsa güncelle ve ses çal
-        if (girisChanged) commitGiris(true, max);
-        if (cikisChanged) commitCikis(true, max);
-        // max değişince de güncelle (fullscreen toggle)
-        if (!girisChanged && !cikisChanged) {
-          commitGiris(false, max);
-          commitCikis(false, max);
-        }
+        if (girisChanged) commitGiris(true);
+        if (cikisChanged) commitCikis(true);
       }
 
       prevGirisHash.current = girisHash;
@@ -216,8 +196,7 @@ export default function EkranPage() {
     return () => document.removeEventListener('fullscreenchange', onFS);
   }, []);
 
-  const MAX = isFullscreen ? MAX_FULLSCREEN : MAX_NORMAL;
-  const { girisler, cikislar, sonGuncelleme } = useBildirimEkrani(sesAcik, MAX);
+  const { girisler, cikislar, sonGuncelleme } = useBildirimEkrani(sesAcik);
   const [saat, setSaat] = useState('');
   const [tarih, setTarih] = useState('');
 
@@ -287,9 +266,9 @@ export default function EkranPage() {
             </div>
             <span className="ml-auto w-2 h-2 rounded-full bg-green-500 animate-pulse" />
           </div>
-          <div className="flex-1 flex flex-col gap-1.5 px-3 py-2 overflow-hidden">
+          <div className="flex-1 flex flex-col gap-1.5 px-3 py-2 overflow-y-auto">
             {girisler.length === 0
-              ? <div className="flex-1 flex items-center justify-center"><p className="text-gray-700 text-3xl">—</p></div>
+              ? <div className="flex items-center justify-center py-12"><p className="text-gray-700 text-3xl">—</p></div>
               : girisler.map((k,i) => <BildirimsalKart key={k.id} kayit={k} index={i} total={girisler.length} />)
             }
           </div>
@@ -307,9 +286,9 @@ export default function EkranPage() {
             </div>
             <span className="ml-auto w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
           </div>
-          <div className="flex-1 flex flex-col gap-1.5 px-3 py-2 overflow-hidden">
+          <div className="flex-1 flex flex-col gap-1.5 px-3 py-2 overflow-y-auto">
             {cikislar.length === 0
-              ? <div className="flex-1 flex items-center justify-center"><p className="text-gray-700 text-3xl">—</p></div>
+              ? <div className="flex items-center justify-center py-12"><p className="text-gray-700 text-3xl">—</p></div>
               : cikislar.map((k,i) => <BildirimsalKart key={k.id} kayit={k} index={i} total={cikislar.length} />)
             }
           </div>
@@ -382,9 +361,8 @@ function BildirimsalKart({ kayit, index, total = 5 }: { kayit: Kayit; index: num
   const kart = isGiris ? s.girisKart : s.cikisKart;
   const ikonBg = kayit.tur === 'ogrenci' ? s.ogrenciIkon : s.personelIkon;
 
-  // Ekranı eşit böl: flex-1 ile her kart aynı yüksekliği alır
   return (
-    <div className={`flex-1 flex items-center gap-4 rounded-xl px-5 transition-all duration-500 min-h-0 ${kart}`}>
+    <div className={`h-16 shrink-0 flex items-center gap-4 rounded-xl px-5 transition-all duration-500 ${kart}`}>
       <div className={`rounded-full flex items-center justify-center shrink-0 ${ikonBg} ${s.ikon}`}>
         <UserCheck className="w-5 h-5 text-white" />
       </div>

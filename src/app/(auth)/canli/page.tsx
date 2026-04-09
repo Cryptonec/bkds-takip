@@ -4,7 +4,7 @@ import { useLiveAttendance } from '@/lib/hooks/useLiveAttendance';
 import { OgrenciPaneli, StatusSummaryBar } from '@/components/canli/OgrenciPaneli';
 import { PersonelPaneli } from '@/components/canli/PersonelPaneli';
 import { BildirimPanel, BildirimlerTab } from '@/components/canli/BildirimPanel';
-import { RefreshCw, Wifi, WifiOff, Clock, UserCheck, LogOut, GraduationCap } from 'lucide-react';
+import { RefreshCw, Wifi, WifiOff, Clock, UserCheck, LogOut, GraduationCap, Eye, EyeOff } from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
 
 function SaatSayaci({ lastUpdated }: { lastUpdated: Date | null }) {
@@ -42,6 +42,7 @@ function SaatSayaci({ lastUpdated }: { lastUpdated: Date | null }) {
 export default function CanliPage() {
   const [activeTab, setActiveTab] = useState<'ogrenci' | 'personel' | 'bildirimler'>('ogrenci');
   const [ogrenciFilter, setOgrenciFilter] = useState('hepsi');
+  const [kritikGizle, setKritikGizle] = useState(false);
   const {
     data, loading, error, lastUpdated, refresh,
     yeniBildirimler, dismissBildirim,
@@ -70,14 +71,21 @@ export default function CanliPage() {
   }, []);
 
   const tabBildirimler = useMemo(
-    () => data?.bildirimler.filter(b => !dismissedRef.current.has(b.id)) ?? [],
+    () => (data?.bildirimler ?? []).filter(b =>
+      !dismissedRef.current.has(b.id) && (!kritikGizle || b.severity !== 'kritik')
+    ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, dismissVer],
+    [data, dismissVer, kritikGizle],
+  );
+
+  const filteredYeniBildirimler = useMemo(
+    () => kritikGizle ? yeniBildirimler.filter(b => b.severity !== 'kritik') : yeniBildirimler,
+    [yeniBildirimler, kritikGizle],
   );
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
-      <BildirimPanel bildirimler={yeniBildirimler} onDismiss={dismissBildirim} />
+      <BildirimPanel bildirimler={filteredYeniBildirimler} onDismiss={dismissBildirim} />
 
       {/* Öğrenci giriş toast - yeşil, üst orta */}
       {yeniGirisler.length > 0 && (
@@ -168,6 +176,13 @@ export default function CanliPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button onClick={() => setKritikGizle(v => !v)}
+            className={cn('flex items-center gap-1.5 text-sm border rounded-lg px-3 py-1.5 transition-colors',
+              kritikGizle ? 'bg-red-50 border-red-200 text-red-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+            )}>
+            {kritikGizle ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            Kritik
+          </button>
           <div className={cn('flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full font-medium',
             error ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50'
           )}>

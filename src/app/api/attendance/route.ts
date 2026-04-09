@@ -8,8 +8,9 @@ import { getStaffStatusInfo } from '@/lib/services/staffAttendanceEngine';
 import { getBkdsService } from '@/lib/services/bkdsProviderService';
 import { prisma } from '@/lib/prisma';
 
-let lastBkdsFetch = 0;
-const BKDS_FETCH_INTERVAL = 60000;
+const lastBkdsFetchByOrg = new Map<string, number>();
+const recalcInProgress   = new Set<string>();
+const BKDS_FETCH_INTERVAL = 20000;
 
 function capitalizeDerslik(str: string): string {
   return str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -30,11 +31,13 @@ export async function GET(req: NextRequest) {
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
-  const shouldFetch = (now.getTime() - lastBkdsFetch) >= BKDS_FETCH_INTERVAL;
-  if (shouldFetch) {
-    lastBkdsFetch = now.getTime();
+  const lastFetch = lastBkdsFetchByOrg.get(organizationId) ?? 0;
+  const shouldFetch = (now.getTime() - lastFetch) >= BKDS_FETCH_INTERVAL;
+  if (shouldFetch && !recalcInProgress.has(organizationId)) {
+    lastBkdsFetchByOrg.set(organizationId, now.getTime());
     // Arka planda çalıştır — cevabı bekletme
     (async () => {
+      recalcInProgress.add(organizationId);
       try {
         const service = getBkdsService(organizationId);
         const fetchPromise = service.fetchToday().then(records => service.saveAndAggregate(records, tarih));
@@ -42,9 +45,13 @@ export async function GET(req: NextRequest) {
       } catch (err) {
         console.error('[Attendance API] BKDS hatası:', err);
       }
-      await recalculateAttendance(tarih, organizationId);
-      await recalculateStaffAttendance(tarih, organizationId);
-      await generateAlerts(tarih, organizationId);
+      try {
+        await recalculateAttendance(tarih, organizationId);
+        await recalculateStaffAttendance(tarih, organizationId);
+        await generateAlerts(tarih, organizationId);
+      } finally {
+        recalcInProgress.delete(organizationId);
+      }
     })();
   }
 
@@ -60,7 +67,7 @@ export async function GET(req: NextRequest) {
 
   const importJobId = latestJobForToday?.id;
 
-  const [attendances, staffAttendances, alerts, personelLog, toplamDers] = await Promise.all([
+  const [attendances, staffAttendances, alerts, personelLog, toplamDers, bkdsKayitlar] = await Promise.all([
     getLiveAttendance(tarih, organizationId, importJobId),
     getLiveStaffAttendance(tarih, organizationId),
     getActiveAlerts(tarih, organizationId),
@@ -72,6 +79,11 @@ export async function GET(req: NextRequest) {
     importJobId
       ? prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId, importJobId } })
       : prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId } }),
+    prisma.bkdsAggregate.findMany({
+      where: { tarih: dateOnly, organizationId },
+      select: { id: true, studentId: true, adSoyad: true, ilkGiris: true, sonCikis: true },
+      orderBy: { ilkGiris: 'desc' },
+    }),
   ]);
 
   const ogrenciRows = attendances.map((a) => {
@@ -79,12 +91,12 @@ export async function GET(req: NextRequest) {
     const baslangic = new Date(a.lessonSession.baslangic);
     const bitis = new Date(a.lessonSession.bitis);
     const dakikaKaldi = (baslangic.getTime() - now.getTime()) / 60000;
-    const dersSuresi = (bitis.getTime() - baslangic.getTime()) / 60000;
-    const minKalma = Math.min(40, dersSuresi * 0.8);
     const yaklasanUyari = dakikaKaldi > 0 && dakikaKaldi <= 40 && !a.gercekGiris && a.lessonSession.bkdsRequired;
     const gelmediUyari = dakikaKaldi < -5 && !a.gercekGiris && a.lessonSession.bkdsRequired && a.status !== 'bkds_muaf';
-    const erkenCikisUyari = a.gercekGiris && a.gercekCikis &&
-      ((new Date(a.gercekCikis).getTime() - new Date(a.gercekGiris).getTime()) / 60000) < minKalma;
+    // Erken çıkış: giriş+çıkış var, ders henüz bitmemiş, 40 dk dolmadan çıkmış
+    const erkenCikisUyari = !!(a.gercekGiris && a.gercekCikis &&
+      new Date(a.gercekCikis) < bitis &&
+      ((new Date(a.gercekCikis).getTime() - new Date(a.gercekGiris).getTime()) / 60000) < 40);
 
     return {
       id: a.id,
@@ -104,9 +116,9 @@ export async function GET(req: NextRequest) {
       statusBg: info.bg,
       yaklasanUyari,
       gelmediUyari,
-      erkenCikisUyari: !!erkenCikisUyari,
+      erkenCikisUyari,
       dakikaKaldi: Math.round(dakikaKaldi),
-      minKalmaSuresi: Math.round(minKalma),
+      minKalmaSuresi: 40,
     };
   });
 
@@ -181,6 +193,14 @@ export async function GET(req: NextRequest) {
     dersVar: personelRows.some(r => r.staffId === log.staffId),
   }));
 
+  const bkdsOgrenciKayitlari = bkdsKayitlar.map(b => ({
+    id: b.id,
+    studentId: b.studentId ?? null,
+    adSoyad: b.adSoyad,
+    ilkGiris: b.ilkGiris,
+    sonCikis: b.sonCikis ?? null,
+  }));
+
   return NextResponse.json({
     tarih: tarih.toISOString(),
     ogrenciRows,
@@ -192,6 +212,7 @@ export async function GET(req: NextRequest) {
     bildirimler,
     tumPersonelGirisler,
     toplamDers,
+    bkdsOgrenciKayitlari,
     updatedAt: now.toISOString(),
   });
 }
