@@ -106,6 +106,8 @@ function useBildirimEkrani(sesAcik: boolean) {
   const sesAcikRef = useRef(sesAcik);
   const isFirst = useRef(true);
   const isPollActive = useRef(false);
+  // Sayfa açılış zamanı — geçmiş kayıtların seslendirilmesini engeller
+  const pageLoadTime = useRef<number>(Date.now());
 
   useEffect(() => { sesAcikRef.current = sesAcik; }, [sesAcik]);
 
@@ -191,6 +193,9 @@ function useBildirimEkrani(sesAcik: boolean) {
       const sortedG = [...girisMapRef.current.values()].sort((a, b) => b.ts - a.ts);
       const sortedC = [...cikisMapRef.current.values()].sort((a, b) => b.ts - a.ts);
 
+      // Sayfa açılmadan 2 dakikadan önce gerçekleşmiş kayıtlar seslendirilmez
+      const anonsKesim = pageLoadTime.current - 2 * 60 * 1000;
+
       if (isFirst.current) {
         // İlk yüklemede sessizce göster
         setGirisler(sortedG);
@@ -200,15 +205,21 @@ function useBildirimEkrani(sesAcik: boolean) {
         if (newGirisler.length > 0) {
           setGirisler(sortedG);
           if (sesAcikRef.current) {
-            beepGiris(); // Batch başına tek beep
-            newGirisler.forEach(k => queueSpeech(`${k.ad}, hoş geldiniz`));
+            const anons = newGirisler.filter(k => k.ts >= anonsKesim);
+            if (anons.length > 0) {
+              beepGiris();
+              anons.forEach(k => queueSpeech(`${k.ad}, hoş geldiniz`));
+            }
           }
         }
         if (newCikislar.length > 0) {
           setCikislar(sortedC);
           if (sesAcikRef.current) {
-            beepCikis(); // Batch başına tek beep
-            newCikislar.forEach(k => queueSpeech(`${k.ad}, güle güle`));
+            const anons = newCikislar.filter(k => k.ts >= anonsKesim);
+            if (anons.length > 0) {
+              beepCikis();
+              anons.forEach(k => queueSpeech(`${k.ad}, güle güle`));
+            }
           }
         }
       }
