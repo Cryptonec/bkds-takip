@@ -33,8 +33,10 @@ function getAudioCtx(): AudioContext {
 // Sıralı konuşma kuyruğu — sesler üst üste binmez
 const speechQueue: string[] = [];
 let speechBusy = false;
+let speechWatchdog: ReturnType<typeof setTimeout> | null = null;
 
 function pumpSpeech() {
+  if (speechWatchdog) { clearTimeout(speechWatchdog); speechWatchdog = null; }
   if (speechQueue.length === 0) { speechBusy = false; return; }
   if (document.hidden) { speechBusy = false; return; } // Sekme arka planda — dur, aktifleşince devam
   if (!('speechSynthesis' in window)) { speechQueue.length = 0; speechBusy = false; return; }
@@ -42,19 +44,27 @@ function pumpSpeech() {
   const text = speechQueue.shift()!;
   const utt = new SpeechSynthesisUtterance(text.toLowerCase());
   utt.lang = 'tr-TR';
-  utt.rate = 0.88;
+  utt.rate = 1.05; // Daha hızlı → daha az gecikme
   utt.pitch = 1.0;
   utt.volume = 1.0;
   const voices = window.speechSynthesis.getVoices();
   const trVoice = voices.find(v => v.lang.startsWith('tr'));
   if (trVoice) utt.voice = trVoice;
-  utt.onend  = () => setTimeout(pumpSpeech, 150);
-  utt.onerror = () => setTimeout(pumpSpeech, 150);
+  const next = () => {
+    if (speechWatchdog) { clearTimeout(speechWatchdog); speechWatchdog = null; }
+    setTimeout(pumpSpeech, 100);
+  };
+  utt.onend  = next;
+  utt.onerror = next;
+  // Watchdog: onend hiç gelmezse (Chrome hatası) 5s sonra zorla devam et
+  speechWatchdog = setTimeout(next, 5000);
   window.speechSynthesis.speak(utt);
 }
 
 function queueSpeech(text: string) {
   if (!text || text.includes('*')) return;
+  // Kuyruk 3'ü geçerse en eskiyi at — gecikmeyi önler
+  if (speechQueue.length >= 3) speechQueue.shift();
   speechQueue.push(text);
   if (!speechBusy) pumpSpeech();
 }
@@ -253,7 +263,9 @@ function useBildirimEkrani(sesAcik: boolean) {
     const onVis = () => {
       if (document.visibilityState === 'visible') {
         poll();
-        if (!speechBusy) pumpSpeech(); // Arka planda biriken kuyruğu devam ettir
+        // Arka planda biriken kuyruğun en fazla son 2 öğesini tut
+        if (speechQueue.length > 2) speechQueue.splice(0, speechQueue.length - 2);
+        if (!speechBusy) pumpSpeech();
       }
     };
     document.addEventListener('visibilitychange', onVis);
