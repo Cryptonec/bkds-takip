@@ -30,12 +30,16 @@ function getAudioCtx(): AudioContext {
   return sharedAudioCtx;
 }
 
-// Arka sekmedeyken konuşma kuyruğu
-const pendingSpeech: string[] = [];
+// Sıralı konuşma kuyruğu — sesler üst üste binmez
+const speechQueue: string[] = [];
+let speechBusy = false;
 
-function doSpeak(text: string) {
-  if (!('speechSynthesis' in window)) return;
-  window.speechSynthesis.cancel();
+function pumpSpeech() {
+  if (speechQueue.length === 0) { speechBusy = false; return; }
+  if (document.hidden) { speechBusy = false; return; } // Sekme arka planda — dur, aktifleşince devam
+  if (!('speechSynthesis' in window)) { speechQueue.length = 0; speechBusy = false; return; }
+  speechBusy = true;
+  const text = speechQueue.shift()!;
   const utt = new SpeechSynthesisUtterance(text.toLowerCase());
   utt.lang = 'tr-TR';
   utt.rate = 0.88;
@@ -44,18 +48,15 @@ function doSpeak(text: string) {
   const voices = window.speechSynthesis.getVoices();
   const trVoice = voices.find(v => v.lang.startsWith('tr'));
   if (trVoice) utt.voice = trVoice;
+  utt.onend  = () => setTimeout(pumpSpeech, 150);
+  utt.onerror = () => setTimeout(pumpSpeech, 150);
   window.speechSynthesis.speak(utt);
 }
 
-function speak(text: string) {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-  if (text.includes('*')) return;
-  if (document.hidden) {
-    // Arka sekme: kuyruğa ekle, sekme aktif olunca çal
-    pendingSpeech.push(text);
-    return;
-  }
-  doSpeak(text);
+function queueSpeech(text: string) {
+  if (!text || text.includes('*')) return;
+  speechQueue.push(text);
+  if (!speechBusy) pumpSpeech();
 }
 
 function beepGiris() {
@@ -199,23 +200,15 @@ function useBildirimEkrani(sesAcik: boolean) {
         if (newGirisler.length > 0) {
           setGirisler(sortedG);
           if (sesAcikRef.current) {
-            newGirisler.forEach((k, i) => {
-              setTimeout(() => {
-                beepGiris();
-                speak(`${k.ad}, hoş geldiniz`);
-              }, i * 600);
-            });
+            beepGiris(); // Batch başına tek beep
+            newGirisler.forEach(k => queueSpeech(`${k.ad}, hoş geldiniz`));
           }
         }
         if (newCikislar.length > 0) {
           setCikislar(sortedC);
           if (sesAcikRef.current) {
-            newCikislar.forEach((k, i) => {
-              setTimeout(() => {
-                beepCikis();
-                speak(`${k.ad}, güle güle`);
-              }, i * 600);
-            });
+            beepCikis(); // Batch başına tek beep
+            newCikislar.forEach(k => queueSpeech(`${k.ad}, güle güle`));
           }
         }
       }
@@ -249,11 +242,7 @@ function useBildirimEkrani(sesAcik: boolean) {
     const onVis = () => {
       if (document.visibilityState === 'visible') {
         poll();
-        // Arka sekmedeyken biriken seslendirmeleri çal
-        if (pendingSpeech.length > 0) {
-          const queued = pendingSpeech.splice(0);
-          queued.forEach((text, i) => setTimeout(() => doSpeak(text), i * 900));
-        }
+        if (!speechBusy) pumpSpeech(); // Arka planda biriken kuyruğu devam ettir
       }
     };
     document.addEventListener('visibilitychange', onVis);
