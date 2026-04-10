@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getLiveAttendance, getLiveStaffAttendance, recalculateAttendance, recalculateStaffAttendance } from '@/lib/services/attendanceService';
-import { getActiveAlerts, generateAlerts } from '@/lib/services/alertService';
+import { getLiveAttendance, getLiveStaffAttendance } from '@/lib/services/attendanceService';
+import { getActiveAlerts } from '@/lib/services/alertService';
 import { getAttendanceStatusInfo } from '@/lib/services/attendanceEngine';
 import { getStaffStatusInfo } from '@/lib/services/staffAttendanceEngine';
-import { getBkdsService } from '@/lib/services/bkdsProviderService';
 import { ensurePollerRunning } from '@/lib/services/bkdsPoller';
 import { prisma } from '@/lib/prisma';
-
-const lastBkdsFetchByOrg = new Map<string, number>();
-const recalcInProgress   = new Set<string>();
-const BKDS_FETCH_INTERVAL = 20000;
 
 function capitalizeDerslik(str: string): string {
   return str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -32,32 +27,8 @@ export async function GET(req: NextRequest) {
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
-  // Sunucu restart sonrası poller başlamamışsa başlat
+  // Sunucu restart sonrası poller başlamamışsa başlat (BKDS çekimi sadece poller yapar)
   ensurePollerRunning(organizationId).catch(() => {});
-
-  const lastFetch = lastBkdsFetchByOrg.get(organizationId) ?? 0;
-  const shouldFetch = (now.getTime() - lastFetch) >= BKDS_FETCH_INTERVAL;
-  if (shouldFetch && !recalcInProgress.has(organizationId)) {
-    lastBkdsFetchByOrg.set(organizationId, now.getTime());
-    // Arka planda çalıştır — cevabı bekletme
-    (async () => {
-      recalcInProgress.add(organizationId);
-      try {
-        const service = getBkdsService(organizationId);
-        const fetchPromise = service.fetchToday().then(records => service.saveAndAggregate(records, tarih));
-        await Promise.race([fetchPromise, new Promise((_, r) => setTimeout(() => r(new Error('BKDS timeout')), 15000))]);
-      } catch (err) {
-        console.error('[Attendance API] BKDS hatası:', err);
-      }
-      try {
-        await recalculateAttendance(tarih, organizationId);
-        await recalculateStaffAttendance(tarih, organizationId);
-        await generateAlerts(tarih, organizationId);
-      } finally {
-        recalcInProgress.delete(organizationId);
-      }
-    })();
-  }
 
   // En son import job'u önce bul — getLiveAttendance filtrelemesi için gerekli
   const latestJobForToday = await prisma.importJob.findFirst({

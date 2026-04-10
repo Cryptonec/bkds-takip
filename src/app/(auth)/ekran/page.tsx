@@ -78,10 +78,13 @@ function useBildirimEkrani(sesAcik: boolean) {
   const [sonGuncelleme, setSonGuncelleme] = useState('');
   const sesAcikRef = useRef(sesAcik);
   const isFirst = useRef(true);
+  const isPollActive = useRef(false);
 
   useEffect(() => { sesAcikRef.current = sesAcik; }, [sesAcik]);
 
   const poll = useCallback(async () => {
+    if (isPollActive.current) return; // Önceki istek bitmeden yenisini başlatma
+    isPollActive.current = true;
     try {
       const res = await fetch('/api/attendance');
       if (!res.ok) return;
@@ -193,6 +196,8 @@ function useBildirimEkrani(sesAcik: boolean) {
         { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     } catch (e) {
       console.error('[Ekran]', e);
+    } finally {
+      isPollActive.current = false;
     }
   }, []);
 
