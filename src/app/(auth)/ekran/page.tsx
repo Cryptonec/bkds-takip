@@ -237,8 +237,14 @@ export default function EkranPage() {
   const [menuGizli, setMenuGizli] = useState(false);
 
   const { girisler, cikislar, sonGuncelleme, hata } = useBildirimEkrani(sesAcik);
+  const girisListRef = useRef<HTMLDivElement>(null);
+  const cikisListRef = useRef<HTMLDivElement>(null);
   const [saat, setSaat] = useState('');
   const [tarih, setTarih] = useState('');
+
+  // Yeni kayıt geldiğinde listeyi en üste kaydır
+  useEffect(() => { girisListRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }, [girisler]);
+  useEffect(() => { cikisListRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }, [cikislar]);
 
   useEffect(() => {
     const tick = () => {
@@ -303,7 +309,7 @@ export default function EkranPage() {
             <span className="ml-auto text-xs text-green-800 tabular-nums">{girisler.length}</span>
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
           </div>
-          <div className="flex-1 flex flex-col gap-1.5 px-3 py-2 overflow-y-auto">
+          <div ref={girisListRef} className="flex-1 flex flex-col gap-1.5 px-3 py-2 overflow-y-auto">
             {girisler.length === 0
               ? <div className="flex items-center justify-center py-12"><p className="text-gray-700 text-3xl">—</p></div>
               : girisler.map((k, i) => <BildirimsalKart key={k.id} kayit={k} index={i} />)
@@ -324,7 +330,7 @@ export default function EkranPage() {
             <span className="ml-auto text-xs text-orange-800 tabular-nums">{cikislar.length}</span>
             <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
           </div>
-          <div className="flex-1 flex flex-col gap-1.5 px-3 py-2 overflow-y-auto">
+          <div ref={cikisListRef} className="flex-1 flex flex-col gap-1.5 px-3 py-2 overflow-y-auto">
             {cikislar.length === 0
               ? <div className="flex items-center justify-center py-12"><p className="text-gray-700 text-3xl">—</p></div>
               : cikislar.map((k, i) => <BildirimsalKart key={k.id} kayit={k} index={i} />)
