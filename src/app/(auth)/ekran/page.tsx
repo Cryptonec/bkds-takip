@@ -76,6 +76,8 @@ function useBildirimEkrani(sesAcik: boolean) {
   const [girisler, setGirisler] = useState<Kayit[]>([]);
   const [cikislar, setCikislar] = useState<Kayit[]>([]);
   const [sonGuncelleme, setSonGuncelleme] = useState('');
+  const [hata, setHata] = useState(false);
+  const sonBasariRef = useRef<number>(0);
   const sesAcikRef = useRef(sesAcik);
   const isFirst = useRef(true);
   const isPollActive = useRef(false);
@@ -87,7 +89,7 @@ function useBildirimEkrani(sesAcik: boolean) {
     isPollActive.current = true;
     try {
       const res = await fetch('/api/attendance');
-      if (!res.ok) return;
+      if (!res.ok) { setHata(true); return; }
       const json = await res.json();
 
       const bkdsKayitlar: any[] = json.bkdsOgrenciKayitlari ?? [];
@@ -192,10 +194,14 @@ function useBildirimEkrani(sesAcik: boolean) {
         }
       }
 
-      setSonGuncelleme(new Date().toLocaleTimeString('tr-TR',
+      const now = Date.now();
+      sonBasariRef.current = now;
+      setHata(false);
+      setSonGuncelleme(new Date(now).toLocaleTimeString('tr-TR',
         { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     } catch (e) {
       console.error('[Ekran]', e);
+      setHata(true);
     } finally {
       isPollActive.current = false;
     }
@@ -208,19 +214,29 @@ function useBildirimEkrani(sesAcik: boolean) {
     }
     poll();
     const t = setInterval(poll, 1000);
+    // 15 saniyedir başarılı veri gelmemişse kırmızıya dön
+    const hataKontrol = setInterval(() => {
+      if (sonBasariRef.current > 0 && Date.now() - sonBasariRef.current > 15000) {
+        setHata(true);
+      }
+    }, 3000);
     const onVis = () => { if (document.visibilityState === 'visible') poll(); };
     document.addEventListener('visibilitychange', onVis);
-    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis); };
+    return () => {
+      clearInterval(t);
+      clearInterval(hataKontrol);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [poll]);
 
-  return { girisler, cikislar, sonGuncelleme };
+  return { girisler, cikislar, sonGuncelleme, hata };
 }
 
 export default function EkranPage() {
   const [sesAcik, setSesAcik] = useState(true);
   const [menuGizli, setMenuGizli] = useState(false);
 
-  const { girisler, cikislar, sonGuncelleme } = useBildirimEkrani(sesAcik);
+  const { girisler, cikislar, sonGuncelleme, hata } = useBildirimEkrani(sesAcik);
   const [saat, setSaat] = useState('');
   const [tarih, setTarih] = useState('');
 
@@ -339,7 +355,7 @@ export default function EkranPage() {
             {sesAcik ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
             {sesAcik ? 'Ses Açık' : 'Ses Kapalı'}
           </button>
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+          <span className={`w-2 h-2 rounded-full animate-pulse ${hata ? 'bg-red-500' : 'bg-green-500'}`} />
         </div>
       </div>
 
