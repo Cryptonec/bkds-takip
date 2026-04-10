@@ -251,6 +251,9 @@ export default function EkranPage() {
           <div>
             <p className="text-4xl font-bold tabular-nums tracking-tight leading-none">{saat}</p>
             <p className="text-gray-500 text-xs mt-0.5 capitalize">{tarih}</p>
+            {sonGuncelleme && (
+              <p className="text-gray-600 text-xs mt-0.5">Son veri: {sonGuncelleme}</p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -336,7 +339,6 @@ export default function EkranPage() {
             {sesAcik ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
             {sesAcik ? 'Ses Açık' : 'Ses Kapalı'}
           </button>
-          <span className="text-gray-700 text-xs">{sonGuncelleme || 'Bağlanıyor...'}</span>
           <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
         </div>
       </div>
