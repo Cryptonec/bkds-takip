@@ -52,6 +52,17 @@ export function stopPollingForOrg(organizationId: string): void {
   }
 }
 
+export function isPollingActive(organizationId: string): boolean {
+  return orgIntervals.has(organizationId);
+}
+
+export async function ensurePollerRunning(organizationId: string): Promise<void> {
+  if (isPollingActive(organizationId)) return;
+  const envInterval = Number(process.env.BKDS_POLL_INTERVAL);
+  const interval = (envInterval > 0 && !isNaN(envInterval)) ? envInterval : 10000;
+  startPollingForOrg(organizationId, interval);
+}
+
 export async function startAllPollers(): Promise<void> {
   // BKDS_POLL_INTERVAL env değişkeni DB değerinden önce gelir
   const envInterval = Number(process.env.BKDS_POLL_INTERVAL);

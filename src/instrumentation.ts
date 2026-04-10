@@ -1,12 +1,19 @@
 export async function register() {
-  // Sadece Node.js runtime'da çalış (Edge runtime'da değil)
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const { startAllPollers } = await import('@/lib/services/bkdsPoller');
-    // DB hazır olana kadar kısa bekle (Docker'da migrate tamamlanmış ama bağlantı kurulmuyor olabilir)
-    setTimeout(() => {
-      startAllPollers().catch(err =>
-        console.error('[instrumentation] BKDS poller başlatılamadı:', err)
-      );
-    }, 5000);
+
+    const tryStart = async (attempt: number = 1): Promise<void> => {
+      try {
+        await startAllPollers();
+        console.log('[instrumentation] BKDS poller başlatıldı');
+      } catch (err) {
+        const delay = Math.min(attempt * 5000, 30000);
+        console.error(`[instrumentation] Poller başlatılamadı (deneme ${attempt}), ${delay}ms sonra tekrar:`, (err as Error).message);
+        setTimeout(() => tryStart(attempt + 1), delay);
+      }
+    };
+
+    // DB bağlantısı için kısa bekle, sonra başlat
+    setTimeout(() => tryStart(), 3000);
   }
 }

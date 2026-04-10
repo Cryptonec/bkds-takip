@@ -6,6 +6,7 @@ import { getActiveAlerts, generateAlerts } from '@/lib/services/alertService';
 import { getAttendanceStatusInfo } from '@/lib/services/attendanceEngine';
 import { getStaffStatusInfo } from '@/lib/services/staffAttendanceEngine';
 import { getBkdsService } from '@/lib/services/bkdsProviderService';
+import { ensurePollerRunning } from '@/lib/services/bkdsPoller';
 import { prisma } from '@/lib/prisma';
 
 const lastBkdsFetchByOrg = new Map<string, number>();
@@ -30,6 +31,9 @@ export async function GET(req: NextRequest) {
 
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
+
+  // Sunucu restart sonrası poller başlamamışsa başlat
+  ensurePollerRunning(organizationId).catch(() => {});
 
   const lastFetch = lastBkdsFetchByOrg.get(organizationId) ?? 0;
   const shouldFetch = (now.getTime() - lastFetch) >= BKDS_FETCH_INTERVAL;
