@@ -81,7 +81,10 @@ export async function GET(req: NextRequest) {
       : prisma.lessonSession.count({ where: { tarih: dateOnly, organizationId } }),
     prisma.bkdsAggregate.findMany({
       where: { tarih: dateOnly, organizationId },
-      select: { id: true, studentId: true, adSoyad: true, ilkGiris: true, sonCikis: true },
+      select: {
+        id: true, studentId: true, adSoyad: true, ilkGiris: true, sonCikis: true,
+        student: { select: { adSoyad: true } },
+      },
       orderBy: { ilkGiris: 'desc' },
     }),
   ]);
@@ -196,7 +199,7 @@ export async function GET(req: NextRequest) {
   const bkdsOgrenciKayitlari = bkdsKayitlar.map(b => ({
     id: b.id,
     studentId: b.studentId ?? null,
-    adSoyad: b.adSoyad,
+    adSoyad: b.student?.adSoyad ?? b.adSoyad,
     ilkGiris: b.ilkGiris,
     sonCikis: b.sonCikis ?? null,
   }));
