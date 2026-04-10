@@ -73,7 +73,7 @@ echo DB_PASSWORD=!DB_PASSWORD!
 echo NEXTAUTH_URL=http://localhost:3000
 echo NEXTAUTH_SECRET=!NEXTAUTH_SECRET!
 echo SSO_SECRET=!SSO_SECRET!
-echo BKDS_POLL_INTERVAL=60000
+echo BKDS_POLL_INTERVAL=10000
 ) > .env
 
 echo  [OK] .env oluşturuldu.

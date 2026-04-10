@@ -176,10 +176,35 @@ function useBildirimEkrani(sesAcik: boolean) {
 
   useEffect(() => {
     poll();
-    const t = setInterval(poll, 2000);
-    const onVis = () => { if (document.visibilityState==='visible') poll(); };
+
+    // SSE: sunucu BKDS'den yeni veri çekince anında bildir
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = () => {
+      es = new EventSource('/api/attendance/stream');
+      es.onmessage = (e) => {
+        if (e.data === 'update') poll();
+      };
+      es.onerror = () => {
+        es?.close();
+        es = null;
+        reconnectTimer = setTimeout(connect, 5000);
+      };
+    };
+    connect();
+
+    // SSE kesilirse diye yedek polling (10s)
+    const t = setInterval(poll, 10000);
+    const onVis = () => { if (document.visibilityState === 'visible') poll(); };
     document.addEventListener('visibilitychange', onVis);
-    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis); };
+
+    return () => {
+      es?.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [poll]);
 
   return { girisler, cikislar, sonGuncelleme };

@@ -1,32 +1,34 @@
+import { EventEmitter } from 'events';
 import { prisma } from '@/lib/prisma';
 import { getBkdsService } from './bkdsProviderService';
 import { recalculateAttendance, recalculateStaffAttendance } from './attendanceService';
 import { generateAlerts } from './alertService';
 
+// Poller tamamlandığında SSE endpoint'leri uyarır
+export const bkdsEvents = new EventEmitter();
+bkdsEvents.setMaxListeners(200); // Çok sayıda eş zamanlı SSE bağlantısı için
+
 const runningOrgs = new Set<string>();
 const orgIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
 export async function runBkdsPollForOrg(organizationId: string): Promise<void> {
-  if (runningOrgs.has(organizationId)) {
-    console.log(`[BKDS Poll][${organizationId}] Önceki çalışma devam ediyor, atlıyor...`);
-    return;
-  }
+  if (runningOrgs.has(organizationId)) return;
 
   runningOrgs.add(organizationId);
   const tarih = new Date();
-  console.log(`[BKDS Poll][${organizationId}] Başlatıldı: ${tarih.toISOString()}`);
 
   try {
     const service = getBkdsService(organizationId);
     const records = await service.fetchToday();
-    console.log(`[BKDS Poll][${organizationId}] ${records.length} kayıt çekildi`);
+    console.log(`[BKDS Poll][${organizationId}] ${records.length} kayıt`);
 
     await service.saveAndAggregate(records, tarih);
     await recalculateAttendance(tarih, organizationId);
     await recalculateStaffAttendance(tarih, organizationId);
     await generateAlerts(tarih, organizationId);
 
-    console.log(`[BKDS Poll][${organizationId}] Tamamlandı: ${new Date().toISOString()}`);
+    // Bağlı ekranlara "veri hazır" sinyali gönder
+    bkdsEvents.emit('update', { organizationId });
   } catch (err) {
     console.error(`[BKDS Poll][${organizationId}] Hata:`, err);
   } finally {
@@ -34,9 +36,9 @@ export async function runBkdsPollForOrg(organizationId: string): Promise<void> {
   }
 }
 
-export function startPollingForOrg(organizationId: string, intervalMs: number = 60000): void {
+export function startPollingForOrg(organizationId: string, intervalMs: number): void {
   stopPollingForOrg(organizationId);
-  console.log(`[BKDS Poll][${organizationId}] Polling başlatıldı (${intervalMs}ms aralık)`);
+  console.log(`[BKDS Poll][${organizationId}] ${intervalMs}ms aralıkla başlatıldı`);
   runBkdsPollForOrg(organizationId);
   const handle = setInterval(() => runBkdsPollForOrg(organizationId), intervalMs);
   orgIntervals.set(organizationId, handle);
@@ -47,20 +49,21 @@ export function stopPollingForOrg(organizationId: string): void {
   if (handle) {
     clearInterval(handle);
     orgIntervals.delete(organizationId);
-    console.log(`[BKDS Poll][${organizationId}] Polling durduruldu`);
   }
 }
 
 export async function startAllPollers(): Promise<void> {
+  // BKDS_POLL_INTERVAL env değişkeni DB değerinden önce gelir
+  const envInterval = Number(process.env.BKDS_POLL_INTERVAL);
+  const useEnv = envInterval > 0 && !isNaN(envInterval);
+
   const orgs = await prisma.organization.findMany({
     where: { active: true },
-    include: {
-      credentials: { select: { pollInterval: true } },
-    },
+    include: { credentials: { select: { pollInterval: true } } },
   });
 
   for (const org of orgs) {
-    const interval = org.credentials[0]?.pollInterval ?? Number(process.env.BKDS_POLL_INTERVAL ?? '60000');
+    const interval = useEnv ? envInterval : (org.credentials[0]?.pollInterval ?? 10000);
     startPollingForOrg(org.id, interval);
   }
 }
