@@ -21,9 +21,20 @@ function cozIsim(k: string, ad: string): string {
   return localStorage.getItem(`pname_${k}_${ad.substring(0, 4)}`) ?? ad;
 }
 
-function speak(text: string) {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-  if (text.includes('*')) return;
+// Paylaşılan AudioContext — arka sekme de dahil çalışır
+let sharedAudioCtx: AudioContext | null = null;
+function getAudioCtx(): AudioContext {
+  if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+    sharedAudioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  }
+  return sharedAudioCtx;
+}
+
+// Arka sekmedeyken konuşma kuyruğu
+const pendingSpeech: string[] = [];
+
+function doSpeak(text: string) {
+  if (!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const utt = new SpeechSynthesisUtterance(text.toLowerCase());
   utt.lang = 'tr-TR';
@@ -36,9 +47,21 @@ function speak(text: string) {
   window.speechSynthesis.speak(utt);
 }
 
+function speak(text: string) {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  if (text.includes('*')) return;
+  if (document.hidden) {
+    // Arka sekme: kuyruğa ekle, sekme aktif olunca çal
+    pendingSpeech.push(text);
+    return;
+  }
+  doSpeak(text);
+}
+
 function beepGiris() {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const ctx = getAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
     const g = ctx.createGain();
     g.connect(ctx.destination);
     [880, 1100].forEach((freq, i) => {
@@ -55,7 +78,8 @@ function beepGiris() {
 
 function beepCikis() {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const ctx = getAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
     const g = ctx.createGain();
     g.connect(ctx.destination);
     [660, 440].forEach((freq, i) => {
@@ -155,7 +179,9 @@ function useBildirimEkrani(sesAcik: boolean) {
 
       const newCikislar: Kayit[] = [];
       anlıkCikislar.forEach(k => {
-        if (!cikisMapRef.current.has(k.ad)) {
+        const existing = cikisMapRef.current.get(k.ad);
+        // Yeni çıkış VEYA daha sonraki bir çıkış (re-entry senaryosu)
+        if (!existing || existing.ts < k.ts) {
           cikisMapRef.current.set(k.ad, k);
           newCikislar.push(k);
         }
@@ -220,7 +246,16 @@ function useBildirimEkrani(sesAcik: boolean) {
         setHata(true);
       }
     }, 3000);
-    const onVis = () => { if (document.visibilityState === 'visible') poll(); };
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        poll();
+        // Arka sekmedeyken biriken seslendirmeleri çal
+        if (pendingSpeech.length > 0) {
+          const queued = pendingSpeech.splice(0);
+          queued.forEach((text, i) => setTimeout(() => doSpeak(text), i * 900));
+        }
+      }
+    };
     document.addEventListener('visibilitychange', onVis);
     return () => {
       clearInterval(t);
