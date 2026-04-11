@@ -117,11 +117,14 @@ export function matchMaskedName(masked: string, full: string): boolean {
     .replace(/Ç/g, 'C').replace(/Ğ/g, 'G').replace(/İ/g, 'I')
     .replace(/Ö/g, 'O').replace(/Ş/g, 'S').replace(/Ü/g, 'U');
 
+  // prefix/suffix de boşluk ve Türkçe karakter normalize edilmeli
   const prefixNorm = prefix
+    .replace(/\s+/g, '')
     .replace(/Ç/g, 'C').replace(/Ğ/g, 'G').replace(/İ/g, 'I')
     .replace(/Ö/g, 'O').replace(/Ş/g, 'S').replace(/Ü/g, 'U');
 
   const suffixNorm = suffix
+    .replace(/\s+/g, '')
     .replace(/Ç/g, 'C').replace(/Ğ/g, 'G').replace(/İ/g, 'I')
     .replace(/Ö/g, 'O').replace(/Ş/g, 'S').replace(/Ü/g, 'U');
 
@@ -159,6 +162,7 @@ export function matchMaskedNameFuzzy(masked: string, full: string): {
   // Sadece prefix eşleştir (soyisim değişikliği senaryosu)
   const starIdx = masked.indexOf('*');
   const prefix = masked.slice(0, starIdx).toUpperCase()
+    .replace(/\s+/g, '')
     .replace(/Ç/g, 'C').replace(/Ğ/g, 'G').replace(/İ/g, 'I')
     .replace(/Ö/g, 'O').replace(/Ş/g, 'S').replace(/Ü/g, 'U');
 
