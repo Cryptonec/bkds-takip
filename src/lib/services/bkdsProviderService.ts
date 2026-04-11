@@ -154,53 +154,58 @@ export class BkdsProviderService {
     const dateOnly = new Date(tarih);
     dateOnly.setHours(0, 0, 0, 0);
 
-    await prisma.bkdsRaw.deleteMany({ where: { organizationId: orgId, tarih: dateOnly } });
-    if (records.length > 0) {
-      await prisma.bkdsRaw.createMany({
-        data: records.map(r => ({
-          organizationId: orgId,
-          tarih: dateOnly,
-          adSoyad: r.individual_full_name,
-          maskedTc: r.individual_identity_number ?? null,
-          girisZamani: new Date(r.first_entry),
-          cikisZamani: r.last_exit ? new Date(r.last_exit) : null,
-        })),
-      });
-    }
-
     const bireyRecords    = records.filter(r => r.individual_type === 1);
     const personelRecords = records.filter(r => r.individual_type === 2);
 
-    const [allStudents, allStaff] = await Promise.all([
+    // bkdsRaw güncelle + öğrenci/personel listesini paralel çek
+    const [, , allStudents, allStaff] = await Promise.all([
+      prisma.bkdsRaw.deleteMany({ where: { organizationId: orgId, tarih: dateOnly } }),
+      records.length > 0
+        ? prisma.bkdsRaw.createMany({
+            data: records.map(r => ({
+              organizationId: orgId, tarih: dateOnly,
+              adSoyad: r.individual_full_name,
+              maskedTc: r.individual_identity_number ?? null,
+              girisZamani: new Date(r.first_entry),
+              cikisZamani: r.last_exit ? new Date(r.last_exit) : null,
+            })),
+          })
+        : Promise.resolve(),
       prisma.student.findMany({ where: { organizationId: orgId, aktif: true } }),
       prisma.staff.findMany({ where: { organizationId: orgId, aktif: true } }),
     ]);
 
-    // Öğrenci aggregate
+    // Öğrenci ve personel aggregate'i paralel hazırla
     const bireyMap = new Map<string, BkdsApiRecord[]>();
     for (const r of bireyRecords) {
       const ex = bireyMap.get(r.individual_full_name) ?? [];
-      ex.push(r);
-      bireyMap.set(r.individual_full_name, ex);
+      ex.push(r); bireyMap.set(r.individual_full_name, ex);
+    }
+    const personelMap = new Map<string, BkdsApiRecord[]>();
+    for (const r of personelRecords) {
+      const ex = personelMap.get(r.individual_full_name) ?? [];
+      ex.push(r); personelMap.set(r.individual_full_name, ex);
     }
 
-    // Mevcut eşleşmesiz kayıtları önceden çek (N sorgu yerine 1)
-    const mevcutEslesmezsler = await prisma.bkdsAggregate.findMany({
-      where: { organizationId: orgId, tarih: dateOnly, studentId: null },
-    });
+    // Mevcut DB kayıtlarını paralel çek
+    const [mevcutEslesmezsler, mevcutLoglar] = await Promise.all([
+      prisma.bkdsAggregate.findMany({ where: { organizationId: orgId, tarih: dateOnly, studentId: null } }),
+      prisma.bkdsPersonelLog.findMany({ where: { organizationId: orgId, tarih: dateOnly } }),
+    ]);
     const eslesmezMap = new Map(mevcutEslesmezsler.map(r => [r.adSoyad, r]));
+    const mevcutLogMap = new Map(mevcutLoglar.map(l => [l.maskedAd, l]));
 
-    for (const [maskedName, recs] of bireyMap.entries()) {
+    // Öğrenci aggregate — tüm kayıtları paralel işle
+    await Promise.all([...bireyMap.entries()].map(async ([maskedName, recs]) => {
       const ilkGiris = new Date(Math.min(...recs.map(r => new Date(r.first_entry).getTime())));
       const cikislar = recs.filter(r => r.last_exit).map(r => new Date(r.last_exit!).getTime());
       const sonCikis = cikislar.length > 0 ? new Date(Math.max(...cikislar)) : null;
       const student = allStudents.find(s => matchMaskedName(maskedName, s.adSoyad));
+
       if (student) {
-        // Daha önce eşleşmesiz kaydedilmişse sil
         const eslesmez = eslesmezMap.get(maskedName);
         if (eslesmez) {
           await prisma.bkdsAggregate.delete({ where: { id: eslesmez.id } });
-          eslesmezMap.delete(maskedName);
         }
         await prisma.bkdsAggregate.upsert({
           where: { studentId_tarih_organizationId: { studentId: student.id, tarih: dateOnly, organizationId: orgId } },
@@ -208,7 +213,6 @@ export class BkdsProviderService {
           update: { adSoyad: maskedName, ilkGiris, sonCikis },
         });
       } else {
-        // Yoklama çizelgesi yoksa veya eşleşme bulunamazsa — masked adıyla kaydet
         const mevcut = eslesmezMap.get(maskedName);
         if (mevcut) {
           await prisma.bkdsAggregate.update({ where: { id: mevcut.id }, data: { ilkGiris, sonCikis } });
@@ -218,23 +222,10 @@ export class BkdsProviderService {
           });
         }
       }
-    }
+    }));
 
-    // Personel eşleştirme
-    const personelMap = new Map<string, BkdsApiRecord[]>();
-    for (const r of personelRecords) {
-      const ex = personelMap.get(r.individual_full_name) ?? [];
-      ex.push(r);
-      personelMap.set(r.individual_full_name, ex);
-    }
-
-    // Mevcut log kayıtlarını önceden çek — deleteAll+recreate yerine akıllı güncelleme
-    const mevcutLoglar = await prisma.bkdsPersonelLog.findMany({
-      where: { organizationId: orgId, tarih: dateOnly },
-    });
-    const mevcutLogMap = new Map(mevcutLoglar.map(l => [l.maskedAd, l]));
-
-    for (const [maskedName, recs] of personelMap.entries()) {
+    // Personel eşleştirme — tüm kayıtları paralel işle
+    await Promise.all([...personelMap.entries()].map(async ([maskedName, recs]) => {
       const ilkGiris = new Date(Math.min(...recs.map(r => new Date(r.first_entry).getTime())));
       const cikislar = recs.filter(r => r.last_exit).map(r => new Date(r.last_exit!).getTime());
       const sonCikis = cikislar.length > 0 ? new Date(Math.max(...cikislar)) : null;
@@ -250,21 +241,17 @@ export class BkdsProviderService {
           .map(s => ({ staff: s, result: matchMaskedNameFuzzy(maskedName, s.adSoyad) }))
           .filter(x => x.result.type === 'prefix_eslesme')
           .sort((a, b) => b.result.score - a.result.score);
-
-        if (prefixMatches.length === 1) {
+        if (prefixMatches.length >= 1) {
           matchedStaff = prefixMatches[0].staff;
           eslesmeTipi = 'prefix_eslesme';
-          tahminEdilenAd = prefixMatches[0].staff.adSoyad;
-        } else if (prefixMatches.length > 1) {
-          matchedStaff = prefixMatches[0].staff;
-          eslesmeTipi = 'prefix_eslesme';
-          tahminEdilenAd = prefixMatches.map(x => x.staff.adSoyad).join(' / ');
+          tahminEdilenAd = prefixMatches.length === 1
+            ? prefixMatches[0].staff.adSoyad
+            : prefixMatches.map(x => x.staff.adSoyad).join(' / ');
         }
       }
 
       const logData = {
-        ilkGiris,
-        sonCikis,
+        ilkGiris, sonCikis,
         staffId: matchedStaff?.id ?? null,
         eslesmeDurumu: eslesmeTipi,
         tahminEdilenAd: tahminEdilenAd ?? null,
@@ -272,20 +259,10 @@ export class BkdsProviderService {
 
       const mevcutLog = mevcutLogMap.get(maskedName);
       if (mevcutLog) {
-        // Var olan kaydı güncelle — sayı sıfırlanmaz
-        await prisma.bkdsPersonelLog.update({
-          where: { id: mevcutLog.id },
-          data: logData,
-        });
+        await prisma.bkdsPersonelLog.update({ where: { id: mevcutLog.id }, data: logData });
       } else {
-        // Yeni giriş — oluştur
         await prisma.bkdsPersonelLog.create({
-          data: {
-            organizationId: orgId,
-            tarih: dateOnly,
-            maskedAd: maskedName,
-            ...logData,
-          },
+          data: { organizationId: orgId, tarih: dateOnly, maskedAd: maskedName, ...logData },
         });
       }
 
@@ -293,14 +270,16 @@ export class BkdsProviderService {
         const sessions = await prisma.staffSession.findMany({
           where: { organizationId: orgId, staffId: matchedStaff.id, tarih: dateOnly },
         });
-        for (const session of sessions) {
-          await prisma.staffSession.update({
-            where: { id: session.id },
-            data: { basladiMi: true, baslamaZamani: ilkGiris, sonCikisZamani: sonCikis },
-          });
+        if (sessions.length > 0) {
+          await Promise.all(sessions.map(s =>
+            prisma.staffSession.update({
+              where: { id: s.id },
+              data: { basladiMi: true, baslamaZamani: ilkGiris, sonCikisZamani: sonCikis },
+            })
+          ));
         }
       }
-    }
+    }));
   }
 }
 
