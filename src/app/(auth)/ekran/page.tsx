@@ -158,9 +158,8 @@ function useBildirimEkrani(sesAcik: boolean) {
         const k = p.staffId ?? p.ogretmenAdi;
         if (!pgKeys.has(k) && p.ilkGiris) {
           const ad = cozIsim(k, p.ogretmenAdi);
-          if (!ad.includes('*'))
-            anlıkGirisler.push({ id: `tp-${k}`, tip: 'giris', tur: 'personel',
-              ad, saat: fmt(p.ilkGiris), ts: new Date(p.ilkGiris).getTime() });
+          anlıkGirisler.push({ id: `tp-${k}`, tip: 'giris', tur: 'personel',
+            ad, saat: fmt(p.ilkGiris), ts: new Date(p.ilkGiris).getTime() });
         }
       });
 
@@ -175,9 +174,8 @@ function useBildirimEkrani(sesAcik: boolean) {
         const k = p.staffId ?? p.ogretmenAdi;
         if (!pcKeys.has(k)) {
           const ad = cozIsim(k, p.ogretmenAdi);
-          if (!ad.includes('*'))
-            anlıkCikislar.push({ id: `tpc-${k}`, tip: 'cikis', tur: 'personel',
-              ad, saat: fmt(p.sonCikis), ts: new Date(p.sonCikis).getTime() });
+          anlıkCikislar.push({ id: `tpc-${k}`, tip: 'cikis', tur: 'personel',
+            ad, saat: fmt(p.sonCikis), ts: new Date(p.sonCikis).getTime() });
         }
       });
 
