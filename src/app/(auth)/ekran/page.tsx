@@ -42,7 +42,7 @@ function pumpSpeech() {
   if (!('speechSynthesis' in window)) { speechQueue.length = 0; speechBusy = false; return; }
   speechBusy = true;
   const text = speechQueue.shift()!;
-  const utt = new SpeechSynthesisUtterance(text.toLowerCase());
+  const utt = new SpeechSynthesisUtterance(text.toLocaleLowerCase('tr-TR'));
   utt.lang = 'tr-TR';
   utt.rate = 1.05; // Daha hızlı → daha az gecikme
   utt.pitch = 1.0;
@@ -219,7 +219,12 @@ function useBildirimEkrani(sesAcik: boolean) {
             const anons = newGirisler.filter(k => k.ts >= anonsKesim).sort((a, b) => a.ts - b.ts);
             if (anons.length > 0) {
               beepGiris();
-              anons.forEach(k => queueSpeech(`${k.ad}, hoş geldiniz`));
+              anons.forEach(k => {
+                const metin = k.tur === 'personel'
+                  ? `Sayın ${k.ad}, hoş geldiniz.`
+                  : `Hoş geldiniz, ${k.ad}.`;
+                queueSpeech(metin);
+              });
             }
           }
         }
@@ -229,7 +234,12 @@ function useBildirimEkrani(sesAcik: boolean) {
             const anons = newCikislar.filter(k => k.ts >= anonsKesim).sort((a, b) => a.ts - b.ts);
             if (anons.length > 0) {
               beepCikis();
-              anons.forEach(k => queueSpeech(`${k.ad}, güle güle`));
+              anons.forEach(k => {
+                const metin = k.tur === 'personel'
+                  ? `Sayın ${k.ad}, güle güle.`
+                  : `Güle güle, ${k.ad}.`;
+                queueSpeech(metin);
+              });
             }
           }
         }
