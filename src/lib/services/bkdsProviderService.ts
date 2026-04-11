@@ -125,7 +125,7 @@ export class BkdsProviderService {
 
     while (hasMore) {
       const url = new URL(`${creds.apiUrl}/api/activity/daily-activity/each-individual/`);
-      url.searchParams.set('page_size', '100');
+      url.searchParams.set('page_size', '250');
       url.searchParams.set('ordering', '-first_entry');
       url.searchParams.set('page', String(page));
       if (creds.cityId)     url.searchParams.set('city',     creds.cityId);
