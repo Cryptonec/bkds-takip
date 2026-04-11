@@ -215,7 +215,8 @@ function useBildirimEkrani(sesAcik: boolean) {
         if (newGirisler.length > 0) {
           setGirisler(sortedG);
           if (sesAcikRef.current) {
-            const anons = newGirisler.filter(k => k.ts >= anonsKesim);
+            // Kronolojik sıra: en erken giren önce seslendirilir
+            const anons = newGirisler.filter(k => k.ts >= anonsKesim).sort((a, b) => a.ts - b.ts);
             if (anons.length > 0) {
               beepGiris();
               anons.forEach(k => queueSpeech(`${k.ad}, hoş geldiniz`));
@@ -225,7 +226,7 @@ function useBildirimEkrani(sesAcik: boolean) {
         if (newCikislar.length > 0) {
           setCikislar(sortedC);
           if (sesAcikRef.current) {
-            const anons = newCikislar.filter(k => k.ts >= anonsKesim);
+            const anons = newCikislar.filter(k => k.ts >= anonsKesim).sort((a, b) => a.ts - b.ts);
             if (anons.length > 0) {
               beepCikis();
               anons.forEach(k => queueSpeech(`${k.ad}, güle güle`));

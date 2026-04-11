@@ -83,6 +83,14 @@ export default function CanliPage() {
     [yeniBildirimler, kritikGizle],
   );
 
+  // Tab personel sayısı — deduplicated (personelRows + tumPersonelGirisler)
+  const personelCount = useMemo(() => {
+    const keys = new Set<string>();
+    (data?.personelRows ?? []).forEach(r => keys.add(r.staffId));
+    (data?.tumPersonelGirisler ?? []).forEach(p => keys.add(p.staffId ?? p.ogretmenAdi));
+    return keys.size;
+  }, [data?.personelRows, data?.tumPersonelGirisler]);
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       <BildirimPanel bildirimler={filteredYeniBildirimler} onDismiss={dismissBildirim} />
@@ -201,7 +209,7 @@ export default function CanliPage() {
         <div className="flex">
           {[
             { key: 'ogrenci', label: 'Öğrenci Takibi', count: data?.ogrenciRows.length },
-            { key: 'personel', label: 'Personel Takibi', count: (data?.tumPersonelGirisler ?? data?.personelRows ?? []).length },
+            { key: 'personel', label: 'Personel Takibi', count: personelCount },
             { key: 'bildirimler', label: '🔔 Bildirimler', count: tabBildirimler.length },
           ].map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
