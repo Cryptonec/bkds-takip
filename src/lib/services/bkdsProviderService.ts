@@ -183,17 +183,40 @@ export class BkdsProviderService {
       ex.push(r);
       bireyMap.set(r.individual_full_name, ex);
     }
+
+    // Mevcut eşleşmesiz kayıtları önceden çek (N sorgu yerine 1)
+    const mevcutEslesmezsler = await prisma.bkdsAggregate.findMany({
+      where: { organizationId: orgId, tarih: dateOnly, studentId: null },
+    });
+    const eslesmezMap = new Map(mevcutEslesmezsler.map(r => [r.adSoyad, r]));
+
     for (const [maskedName, recs] of bireyMap.entries()) {
       const ilkGiris = new Date(Math.min(...recs.map(r => new Date(r.first_entry).getTime())));
       const cikislar = recs.filter(r => r.last_exit).map(r => new Date(r.last_exit!).getTime());
       const sonCikis = cikislar.length > 0 ? new Date(Math.max(...cikislar)) : null;
       const student = allStudents.find(s => matchMaskedName(maskedName, s.adSoyad));
       if (student) {
+        // Daha önce eşleşmesiz kaydedilmişse sil
+        const eslesmez = eslesmezMap.get(maskedName);
+        if (eslesmez) {
+          await prisma.bkdsAggregate.delete({ where: { id: eslesmez.id } });
+          eslesmezMap.delete(maskedName);
+        }
         await prisma.bkdsAggregate.upsert({
           where: { studentId_tarih_organizationId: { studentId: student.id, tarih: dateOnly, organizationId: orgId } },
           create: { organizationId: orgId, studentId: student.id, tarih: dateOnly, adSoyad: maskedName, ilkGiris, sonCikis },
           update: { adSoyad: maskedName, ilkGiris, sonCikis },
         });
+      } else {
+        // Yoklama çizelgesi yoksa veya eşleşme bulunamazsa — masked adıyla kaydet
+        const mevcut = eslesmezMap.get(maskedName);
+        if (mevcut) {
+          await prisma.bkdsAggregate.update({ where: { id: mevcut.id }, data: { ilkGiris, sonCikis } });
+        } else {
+          await prisma.bkdsAggregate.create({
+            data: { organizationId: orgId, studentId: null, tarih: dateOnly, adSoyad: maskedName, ilkGiris, sonCikis },
+          });
+        }
       }
     }
 
