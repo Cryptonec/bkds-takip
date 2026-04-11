@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Search, Plus, UserCheck, UserX, X, Pencil, Check,
-  LogOut, RefreshCw, Clock,
+  LogOut, RefreshCw, Clock, Download, Trash2, AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -14,9 +14,14 @@ interface Staff {
   normalizedName: string;
 }
 
+interface BkdsUnmatched {
+  maskedAd: string;
+  tahminEdilenAd: string | null;
+}
+
 interface PersonelLog {
-  staffId: string;           // UUID veya masked ad
-  ogretmenAdi: string;       // gerçek ad veya masked
+  staffId: string;
+  ogretmenAdi: string;
   ilkGiris: string | null;
   sonCikis: string | null;
   eslesmeDurumu: string;
@@ -32,72 +37,133 @@ interface PersonelSession {
   status: string;
 }
 
-/* ─────────────────────────── yardımcılar ─────────────────────── */
 function fmt(iso: string) {
   return new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
 }
 
-function getStorageKey(staffId: string, masked: string) {
-  return `pname_${staffId}_${masked.substring(0, 4)}`;
-}
-
-/* ─────────────────────── İsim bileşeni ──────────────────────── */
-function PersonelIsimHucre({ staffId, ogretmenAdi }: { staffId: string; ogretmenAdi: string }) {
-  const isMasked = ogretmenAdi.includes('*');
-  const storageKey = getStorageKey(staffId, ogretmenAdi);
+/* ─────────────── Satır düzenleme bileşeni ───────────────────── */
+function StaffSatir({
+  staff,
+  onUpdate,
+  onDelete,
+}: {
+  staff: Staff;
+  onUpdate: (id: string, data: Partial<Pick<Staff, 'adSoyad' | 'aktif'>>) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState('');
-  const [savedName, setSavedName] = useState<string | null>(() =>
-    typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null
-  );
+  const [value, setValue] = useState(staff.adSoyad);
+  const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
-  function handleSave() {
-    const t = value.trim().toLocaleUpperCase('tr-TR');
-    if (!t) return;
-    localStorage.setItem(storageKey, t);
-    setSavedName(t);
+  async function saveAd() {
+    if (!value.trim() || value.trim() === staff.adSoyad) { setEditing(false); return; }
+    setSaving(true);
+    await onUpdate(staff.id, { adSoyad: value.trim() });
+    setSaving(false);
     setEditing(false);
-    setValue('');
   }
 
-  if (!isMasked) {
-    return <span className="font-semibold text-gray-900">{ogretmenAdi}</span>;
+  async function toggleAktif() {
+    setSaving(true);
+    await onUpdate(staff.id, { aktif: !staff.aktif });
+    setSaving(false);
   }
 
-  if (editing) {
-    return (
-      <div className="flex items-center gap-1.5">
-        <input
-          autoFocus
-          value={value}
-          onChange={e => setValue(e.target.value.toLocaleUpperCase('tr-TR'))}
-          onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false); }}
-          placeholder="GERÇEK İSMİ YAZ"
-          className="border border-blue-300 rounded px-2 py-1 text-sm w-44 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          style={{ textTransform: 'uppercase' }}
-        />
-        <button onClick={handleSave} className="text-green-600 hover:text-green-800"><Check className="w-4 h-4" /></button>
-        <button onClick={() => { setEditing(false); setValue(''); }} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
-      </div>
-    );
+  async function handleDelete() {
+    setSaving(true);
+    await onDelete(staff.id);
+    setSaving(false);
+    setConfirming(false);
   }
 
   return (
-    <div className="flex items-center gap-2 flex-wrap">
-      {savedName
-        ? <span className="font-semibold text-gray-900">{savedName}</span>
-        : <span className="text-xs bg-orange-100 text-orange-700 border border-orange-300 px-2 py-0.5 rounded-full italic">
-            Tanımlanmadı ({ogretmenAdi.charAt(0)}.)
+    <tr className={cn('hover:bg-gray-50 transition-colors', !staff.aktif && 'opacity-60')}>
+      <td className="px-4 py-3">
+        {editing ? (
+          <div className="flex items-center gap-1.5">
+            <input
+              autoFocus
+              value={value}
+              onChange={e => setValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') saveAd();
+                if (e.key === 'Escape') { setEditing(false); setValue(staff.adSoyad); }
+              }}
+              className="border border-blue-300 rounded px-2 py-1 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button onClick={saveAd} disabled={saving} className="text-green-600 hover:text-green-800 disabled:opacity-40">
+              <Check className="w-4 h-4" />
+            </button>
+            <button onClick={() => { setEditing(false); setValue(staff.adSoyad); }} className="text-gray-400 hover:text-gray-600">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-gray-900">{staff.adSoyad}</span>
+            {staff.adSoyad.includes('*') && (
+              <span className="text-xs bg-orange-100 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded-full">maskeli</span>
+            )}
+            <button
+              onClick={() => { setValue(staff.adSoyad); setEditing(true); }}
+              className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-colors"
+              title="İsmi düzenle"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+        <p className="text-xs text-gray-400 mt-0.5 font-mono">{staff.normalizedName}</p>
+      </td>
+
+      <td className="px-4 py-3">
+        <button
+          onClick={toggleAktif}
+          disabled={saving}
+          className="disabled:opacity-40 transition-opacity"
+          title={staff.aktif ? 'Pasife al' : 'Aktife al'}
+        >
+          {staff.aktif ? (
+            <span className="inline-flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded-full px-2.5 py-0.5 text-xs font-medium hover:bg-green-100">
+              <UserCheck className="w-3 h-3" /> Aktif
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-gray-500 bg-gray-50 border border-gray-200 rounded-full px-2.5 py-0.5 text-xs font-medium hover:bg-gray-100">
+              <UserX className="w-3 h-3" /> Pasif
+            </span>
+          )}
+        </button>
+      </td>
+
+      <td className="px-4 py-3">
+        <button
+          onClick={() => { setValue(staff.adSoyad); setEditing(true); }}
+          className="text-gray-400 hover:text-blue-600 transition-colors mr-2"
+          title="Düzenle"
+        >
+          <Pencil className="w-4 h-4" />
+        </button>
+        {confirming ? (
+          <span className="inline-flex items-center gap-1">
+            <button onClick={handleDelete} disabled={saving} className="text-red-600 hover:text-red-800 text-xs font-medium disabled:opacity-40">
+              Evet sil
+            </button>
+            <button onClick={() => setConfirming(false)} className="text-gray-400 hover:text-gray-600 text-xs ml-1">
+              İptal
+            </button>
           </span>
-      }
-      <button
-        onClick={() => { setValue(savedName ?? ''); setEditing(true); }}
-        className="flex items-center gap-1 text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-0.5 rounded transition-colors"
-        title={savedName ? 'İsmi düzenle' : 'İsim gir'}
-      >
-        <Pencil className="w-3 h-3" /> {savedName ? 'Düzenle' : 'İsim Gir'}
-      </button>
-    </div>
+        ) : (
+          <button
+            onClick={() => setConfirming(true)}
+            className="text-gray-300 hover:text-red-500 transition-colors"
+            title="Sil"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+      </td>
+    </tr>
   );
 }
 
@@ -127,7 +193,6 @@ function BugunkuHareketler() {
     return () => clearInterval(t);
   }, [load]);
 
-  // Birleştir: log + session, staffId ile tekilleştir
   const birlesik: Array<{
     key: string;
     ogretmenAdi: string;
@@ -137,18 +202,13 @@ function BugunkuHareketler() {
     eslesmeDurumu: string;
   }> = (() => {
     const map = new Map<string, typeof birlesik[0]>();
-
-    // Session'lardan (ders programı olan personel)
     for (const s of sessions) {
       const existing = map.get(s.staffId);
       if (!existing) {
         map.set(s.staffId, {
-          key: s.staffId,
-          ogretmenAdi: s.ogretmenAdi,
-          ilkGiris: s.baslamaZamani ?? null,
-          sonCikis: s.sonCikisZamani ?? null,
-          dersVar: true,
-          eslesmeDurumu: 'tam_eslesme',
+          key: s.staffId, ogretmenAdi: s.ogretmenAdi,
+          ilkGiris: s.baslamaZamani ?? null, sonCikis: s.sonCikisZamani ?? null,
+          dersVar: true, eslesmeDurumu: 'tam_eslesme',
         });
       } else {
         if (s.baslamaZamani && (!existing.ilkGiris || s.baslamaZamani < existing.ilkGiris))
@@ -157,28 +217,21 @@ function BugunkuHareketler() {
           existing.sonCikis = s.sonCikisZamani;
       }
     }
-
-    // BKDS log'larından
     for (const p of logs) {
       const key = p.staffId ?? p.ogretmenAdi;
       const existing = map.get(key);
       if (!existing) {
         map.set(key, {
-          key,
-          ogretmenAdi: p.ogretmenAdi,
-          ilkGiris: p.ilkGiris,
-          sonCikis: p.sonCikis,
-          dersVar: p.dersVar,
-          eslesmeDurumu: p.eslesmeDurumu,
+          key, ogretmenAdi: p.ogretmenAdi,
+          ilkGiris: p.ilkGiris, sonCikis: p.sonCikis,
+          dersVar: p.dersVar, eslesmeDurumu: p.eslesmeDurumu,
         });
       } else {
         if (p.ilkGiris && !existing.ilkGiris) existing.ilkGiris = p.ilkGiris;
         if (p.sonCikis && !existing.sonCikis) existing.sonCikis = p.sonCikis;
       }
     }
-
     return Array.from(map.values()).sort((a, b) => {
-      // Önce girenler üste
       if (a.ilkGiris && b.ilkGiris) return a.ilkGiris.localeCompare(b.ilkGiris);
       if (a.ilkGiris) return -1;
       if (b.ilkGiris) return 1;
@@ -189,17 +242,18 @@ function BugunkuHareketler() {
   const kurumda = birlesik.filter(p => p.ilkGiris && !p.sonCikis).length;
   const ayrildi = birlesik.filter(p => p.sonCikis).length;
 
-  if (loading) {
-    return <div className="flex items-center justify-center py-16 text-gray-400"><RefreshCw className="w-5 h-5 animate-spin mr-2" /> Yükleniyor...</div>;
-  }
+  if (loading) return (
+    <div className="flex items-center justify-center py-16 text-gray-400">
+      <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Yükleniyor...
+    </div>
+  );
 
-  if (birlesik.length === 0) {
-    return <div className="text-center py-16 text-gray-400 text-sm">Bugün için BKDS verisi yok</div>;
-  }
+  if (birlesik.length === 0) return (
+    <div className="text-center py-16 text-gray-400 text-sm">Bugün için BKDS verisi yok</div>
+  );
 
   return (
     <div>
-      {/* Özet bar */}
       <div className="flex items-center gap-5 px-5 py-3 border-b border-gray-100 bg-gray-50 text-sm">
         <span className="text-gray-500 font-medium">{birlesik.length} personel</span>
         {kurumda > 0 && (
@@ -219,8 +273,6 @@ function BugunkuHareketler() {
           </button>
         </span>
       </div>
-
-      {/* Tablo */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -239,9 +291,9 @@ function BugunkuHareketler() {
                   halaKurumda ? 'bg-green-50/30' : p.sonCikis ? '' : 'bg-gray-50/20'
                 )}>
                   <td className="px-5 py-3">
-                    <PersonelIsimHucre staffId={p.key} ogretmenAdi={p.ogretmenAdi} />
+                    <span className="font-semibold text-gray-900">{p.ogretmenAdi}</span>
                     {!p.dersVar && p.ilkGiris && (
-                      <span className="mt-0.5 inline-block text-xs bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full">Derssiz Gün</span>
+                      <span className="mt-0.5 ml-2 inline-block text-xs bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full">Derssiz Gün</span>
                     )}
                   </td>
                   <td className="px-5 py-3 w-36 tabular-nums">
@@ -296,17 +348,37 @@ export default function PersonelPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  async function load() {
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (search) params.set('q', search);
-    const res = await fetch(`/api/personel?${params}`);
-    const data = await res.json();
-    setStaff(Array.isArray(data) ? data : []);
-    setLoading(false);
-  }
+  // BKDS eşleşmemiş personel
+  const [bkdsUnmatched, setBkdsUnmatched] = useState<BkdsUnmatched[]>([]);
+  const [syncing, setSyncing] = useState(false);
 
-  useEffect(() => { load(); }, [search]);
+  const loadStaff = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch('/api/personel');
+    if (res.ok) {
+      const data = await res.json();
+      setStaff(Array.isArray(data) ? data : []);
+    }
+    setLoading(false);
+  }, []);
+
+  const loadBkdsUnmatched = useCallback(async () => {
+    const res = await fetch('/api/personel?source=bkds');
+    if (res.ok) {
+      const data = await res.json();
+      setBkdsUnmatched(Array.isArray(data) ? data : []);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStaff();
+    loadBkdsUnmatched();
+  }, [loadStaff, loadBkdsUnmatched]);
+
+  // Arama filtresi (client-side)
+  const filtered = staff.filter(s =>
+    !search || s.adSoyad.toLowerCase().includes(search.toLowerCase())
+  );
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -321,15 +393,51 @@ export default function PersonelPage() {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(JSON.stringify(err));
+        throw new Error(err.error ?? JSON.stringify(err));
       }
       setAdSoyad('');
       setShowForm(false);
-      load();
+      await loadStaff();
     } catch (err: any) {
       setError(err.message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/personel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sync' }),
+      });
+      if (res.ok) {
+        await loadStaff();
+        await loadBkdsUnmatched();
+      }
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function handleUpdate(id: string, data: Partial<Pick<Staff, 'adSoyad' | 'aktif'>>) {
+    const res = await fetch(`/api/personel/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setStaff(prev => prev.map(s => s.id === id ? updated : s));
+    }
+  }
+
+  async function handleDelete(id: string) {
+    const res = await fetch(`/api/personel/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setStaff(prev => prev.filter(s => s.id !== id));
     }
   }
 
@@ -377,6 +485,30 @@ export default function PersonelPage() {
       {/* Personel Listesi */}
       {aktifSekme === 'liste' && (
         <>
+          {/* BKDS'den yeni gelen personel banner */}
+          {bkdsUnmatched.length > 0 && (
+            <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4">
+              <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-amber-800">
+                  BKDS'de {bkdsUnmatched.length} yeni personel tespit edildi
+                </p>
+                <p className="text-xs text-amber-600 mt-0.5">
+                  Son 30 günde görülen, henüz listede olmayan personel
+                </p>
+              </div>
+              <button
+                onClick={handleSync}
+                disabled={syncing}
+                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors shrink-0"
+              >
+                <Download className="w-3.5 h-3.5" />
+                {syncing ? 'Ekleniyor...' : 'Listeye Ekle'}
+              </button>
+            </div>
+          )}
+
+          {/* Yeni personel formu */}
           {showForm && (
             <form onSubmit={handleAdd} className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
               <h2 className="text-sm font-semibold text-gray-700 mb-3">Yeni Personel</h2>
@@ -389,7 +521,7 @@ export default function PersonelPage() {
                     onChange={(e) => setAdSoyad(e.target.value)}
                     required
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="örn: Ayşe Öğretmen"
+                    placeholder="örn: Ayşe Yılmaz"
                   />
                 </div>
                 <button
@@ -404,6 +536,7 @@ export default function PersonelPage() {
             </form>
           )}
 
+          {/* Arama */}
           <div className="relative mb-4">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -414,10 +547,11 @@ export default function PersonelPage() {
             />
           </div>
 
+          {/* Liste */}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
             {loading ? (
               <div className="p-8 text-center text-gray-400">Yükleniyor...</div>
-            ) : staff.length === 0 ? (
+            ) : filtered.length === 0 ? (
               <div className="p-8 text-center text-gray-400">
                 {search ? 'Arama sonucu bulunamadı' : 'Henüz personel eklenmemiş'}
               </div>
@@ -427,27 +561,17 @@ export default function PersonelPage() {
                   <tr className="border-b border-gray-100 bg-gray-50">
                     <th className="text-left px-4 py-3 font-semibold text-gray-600">Ad Soyad</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-600">Durum</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600 w-24">İşlemler</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {staff.map((s) => (
-                    <tr key={s.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">{s.adSoyad}</p>
-                        <p className="text-xs text-gray-400 mt-0.5 font-mono">{s.normalizedName}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        {s.aktif ? (
-                          <span className="inline-flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded-full px-2.5 py-0.5 text-xs font-medium">
-                            <UserCheck className="w-3 h-3" /> Aktif
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-gray-500 bg-gray-50 border border-gray-200 rounded-full px-2.5 py-0.5 text-xs font-medium">
-                            <UserX className="w-3 h-3" /> Pasif
-                          </span>
-                        )}
-                      </td>
-                    </tr>
+                  {filtered.map((s) => (
+                    <StaffSatir
+                      key={s.id}
+                      staff={s}
+                      onUpdate={handleUpdate}
+                      onDelete={handleDelete}
+                    />
                   ))}
                 </tbody>
               </table>
