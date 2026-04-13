@@ -201,8 +201,8 @@ function useBildirimEkrani(sesAcik: boolean) {
       const sortedG = [...girisMapRef.current.values()].sort((a, b) => b.ts - a.ts);
       const sortedC = [...cikisMapRef.current.values()].sort((a, b) => b.ts - a.ts);
 
-      // Sayfa açılmadan 2 dakikadan önce gerçekleşmiş kayıtlar seslendirilmez
-      const anonsKesim = pageLoadTime.current - 2 * 60 * 1000;
+      // Sadece sayfa açıldıktan SONRA gerçekleşen kayıtlar seslendirilir
+      const anonsKesim = pageLoadTime.current;
 
       if (isFirst.current) {
         // İlk yüklemede sessizce göster
