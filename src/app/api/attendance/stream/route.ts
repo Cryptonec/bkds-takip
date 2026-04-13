@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { bkdsEvents } from '@/lib/services/bkdsPoller';
+import { getEkranData } from '@/lib/services/ekranDataService';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,19 +25,26 @@ export async function GET(req: NextRequest) {
       };
 
       // Bağlantı kuruldu sinyali
-      send('connected');
+      send(JSON.stringify({ type: 'connected' }));
 
-      // BKDS poller tamamlandığında anında bildir
-      const onUpdate = ({ organizationId: updatedOrg }: { organizationId: string }) => {
-        if (updatedOrg === organizationId) send('update');
+      // Hemen mevcut veriyi gönder — client fetch yapmak zorunda kalmaz
+      getEkranData(organizationId).then(data => {
+        if (!closed) send(JSON.stringify({ type: 'ekranData', ...data }));
+      }).catch(() => {});
+
+      // BKDS poller tamamlandığında veriyi doğrudan push et
+      const onUpdate = ({ organizationId: updatedOrg, ekranData }: any) => {
+        if (updatedOrg === organizationId && ekranData) {
+          send(JSON.stringify({ type: 'ekranData', ...ekranData }));
+        }
       };
       bkdsEvents.on('update', onUpdate);
 
-      // Bağlantıyı canlı tut
+      // Bağlantıyı canlı tut (10s)
       const heartbeat = setInterval(() => {
         if (closed) return;
-        try { controller.enqueue(encoder.encode(': \n\n')); } catch {}
-      }, 15000);
+        try { controller.enqueue(encoder.encode(': heartbeat\n\n')); } catch {}
+      }, 10000);
 
       req.signal.addEventListener('abort', () => {
         closed = true;

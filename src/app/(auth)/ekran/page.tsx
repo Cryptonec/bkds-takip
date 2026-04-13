@@ -38,13 +38,13 @@ let speechWatchdog: ReturnType<typeof setTimeout> | null = null;
 function pumpSpeech() {
   if (speechWatchdog) { clearTimeout(speechWatchdog); speechWatchdog = null; }
   if (speechQueue.length === 0) { speechBusy = false; return; }
-  if (document.hidden) { speechBusy = false; return; } // Sekme arka planda — dur, aktifleşince devam
+  if (document.hidden) { speechBusy = false; return; }
   if (!('speechSynthesis' in window)) { speechQueue.length = 0; speechBusy = false; return; }
   speechBusy = true;
   const text = speechQueue.shift()!;
   const utt = new SpeechSynthesisUtterance(text.toLocaleLowerCase('tr-TR'));
   utt.lang = 'tr-TR';
-  utt.rate = 1.05; // Daha hızlı → daha az gecikme
+  utt.rate = 1.05;
   utt.pitch = 1.0;
   utt.volume = 1.0;
   const voices = window.speechSynthesis.getVoices();
@@ -56,14 +56,12 @@ function pumpSpeech() {
   };
   utt.onend  = next;
   utt.onerror = next;
-  // Watchdog: onend hiç gelmezse (Chrome hatası) 5s sonra zorla devam et
   speechWatchdog = setTimeout(next, 5000);
   window.speechSynthesis.speak(utt);
 }
 
 function queueSpeech(text: string) {
   if (!text || text.includes('*')) return;
-  // Kuyruk 3'ü geçerse en eskiyi at — gecikmeyi önler
   if (speechQueue.length >= 3) speechQueue.shift();
   speechQueue.push(text);
   if (!speechBusy) pumpSpeech();
@@ -112,148 +110,132 @@ function useBildirimEkrani(sesAcik: boolean) {
   const [cikislar, setCikislar] = useState<Kayit[]>([]);
   const [sonGuncelleme, setSonGuncelleme] = useState('');
   const [hata, setHata] = useState(false);
+  const [sseAktif, setSseAktif] = useState(false);
   const sonBasariRef = useRef<number>(0);
   const sesAcikRef = useRef(sesAcik);
   const isFirst = useRef(true);
-  const isPollActive = useRef(false);
   // Sayfa açılış zamanı — geçmiş kayıtların seslendirilmesini engeller
   const pageLoadTime = useRef<number>(Date.now());
 
   useEffect(() => { sesAcikRef.current = sesAcik; }, [sesAcik]);
 
-  const poll = useCallback(async () => {
-    if (isPollActive.current) return; // Önceki istek bitmeden yenisini başlatma
-    isPollActive.current = true;
-    try {
-      const res = await fetch('/api/attendance');
-      if (!res.ok) { setHata(true); return; }
-      const json = await res.json();
+  // ── Veri işleme: hem SSE hem fallback fetch bu fonksiyonu kullanır ──
+  const processData = useCallback((json: any) => {
+    const bkdsKayitlar: any[] = json.bkdsOgrenciKayitlari ?? [];
+    const personelRows: any[] = json.personelRows ?? [];
+    const tumPersonel: any[] = json.tumPersonelGirisler ?? [];
 
-      const bkdsKayitlar: any[] = json.bkdsOgrenciKayitlari ?? [];
-      const personelRows: any[] = json.personelRows ?? [];
-      const tumPersonel: any[] = json.tumPersonelGirisler ?? [];
+    const anlikGirisler: Kayit[] = [];
+    const anlikCikislar: Kayit[] = [];
 
-      // Mevcut dönemdeki tüm giriş/çıkışları topla
-      const anlıkGirisler: Kayit[] = [];
-      const anlıkCikislar: Kayit[] = [];
+    // Öğrenci girişleri
+    bkdsKayitlar.filter((b: any) => b.ilkGiris).forEach((b: any) => {
+      anlikGirisler.push({ id: `bg-${b.id}`, tip: 'giris', tur: 'ogrenci',
+        ad: b.adSoyad, saat: fmt(b.ilkGiris), ts: new Date(b.ilkGiris).getTime() });
+    });
+    bkdsKayitlar.filter((b: any) => b.sonCikis).forEach((b: any) => {
+      anlikCikislar.push({ id: `bc-${b.id}`, tip: 'cikis', tur: 'ogrenci',
+        ad: b.adSoyad, saat: fmt(b.sonCikis), ts: new Date(b.sonCikis).getTime() });
+    });
 
-      // Öğrenci girişleri — bkdsOgrenciKayitlari (dersi olsa da olmasa da)
-      bkdsKayitlar.filter(b => b.ilkGiris).forEach(b => {
-        anlıkGirisler.push({ id: `bg-${b.id}`, tip: 'giris', tur: 'ogrenci',
-          ad: b.adSoyad, saat: fmt(b.ilkGiris), ts: new Date(b.ilkGiris).getTime() });
-      });
-      bkdsKayitlar.filter(b => b.sonCikis).forEach(b => {
-        anlıkCikislar.push({ id: `bc-${b.id}`, tip: 'cikis', tur: 'ogrenci',
-          ad: b.adSoyad, saat: fmt(b.sonCikis), ts: new Date(b.sonCikis).getTime() });
-      });
+    // Personel girişleri
+    const pgKeys = new Set<string>();
+    personelRows.filter((r: any) => r.baslamaZamani).forEach((r: any) => {
+      pgKeys.add(r.staffId);
+      anlikGirisler.push({ id: `pg-${r.staffId}`, tip: 'giris', tur: 'personel',
+        ad: r.ogretmenAdi, saat: fmt(r.baslamaZamani), ts: new Date(r.baslamaZamani).getTime() });
+    });
+    tumPersonel.forEach((p: any) => {
+      const k = p.staffId ?? p.ogretmenAdi;
+      if (!pgKeys.has(k) && p.ilkGiris) {
+        const ad = cozIsim(k, p.ogretmenAdi);
+        anlikGirisler.push({ id: `tp-${k}`, tip: 'giris', tur: 'personel',
+          ad, saat: fmt(p.ilkGiris), ts: new Date(p.ilkGiris).getTime() });
+      }
+    });
 
-      // Personel girişleri
-      const pgKeys = new Set<string>();
-      personelRows.filter(r => r.baslamaZamani).forEach(r => {
-        pgKeys.add(r.staffId);
-        anlıkGirisler.push({ id: `pg-${r.staffId}`, tip: 'giris', tur: 'personel',
-          ad: r.ogretmenAdi, saat: fmt(r.baslamaZamani), ts: new Date(r.baslamaZamani).getTime() });
-      });
-      tumPersonel.forEach(p => {
-        const k = p.staffId ?? p.ogretmenAdi;
-        if (!pgKeys.has(k) && p.ilkGiris) {
-          const ad = cozIsim(k, p.ogretmenAdi);
-          anlıkGirisler.push({ id: `tp-${k}`, tip: 'giris', tur: 'personel',
-            ad, saat: fmt(p.ilkGiris), ts: new Date(p.ilkGiris).getTime() });
-        }
-      });
+    // Personel çıkışları
+    const pcKeys = new Set<string>();
+    personelRows.filter((r: any) => r.sonCikisZamani).forEach((r: any) => {
+      pcKeys.add(r.staffId);
+      anlikCikislar.push({ id: `pc-${r.staffId}`, tip: 'cikis', tur: 'personel',
+        ad: r.ogretmenAdi, saat: fmt(r.sonCikisZamani), ts: new Date(r.sonCikisZamani).getTime() });
+    });
+    tumPersonel.filter((p: any) => p.sonCikis).forEach((p: any) => {
+      const k = p.staffId ?? p.ogretmenAdi;
+      if (!pcKeys.has(k)) {
+        const ad = cozIsim(k, p.ogretmenAdi);
+        anlikCikislar.push({ id: `tpc-${k}`, tip: 'cikis', tur: 'personel',
+          ad, saat: fmt(p.sonCikis), ts: new Date(p.sonCikis).getTime() });
+      }
+    });
 
-      // Personel çıkışları
-      const pcKeys = new Set<string>();
-      personelRows.filter(r => r.sonCikisZamani).forEach(r => {
-        pcKeys.add(r.staffId);
-        anlıkCikislar.push({ id: `pc-${r.staffId}`, tip: 'cikis', tur: 'personel',
-          ad: r.ogretmenAdi, saat: fmt(r.sonCikisZamani), ts: new Date(r.sonCikisZamani).getTime() });
-      });
-      tumPersonel.filter(p => p.sonCikis).forEach(p => {
-        const k = p.staffId ?? p.ogretmenAdi;
-        if (!pcKeys.has(k)) {
-          const ad = cozIsim(k, p.ogretmenAdi);
-          anlıkCikislar.push({ id: `tpc-${k}`, tip: 'cikis', tur: 'personel',
-            ad, saat: fmt(p.sonCikis), ts: new Date(p.sonCikis).getTime() });
-        }
-      });
+    // Yeni girişleri bul
+    const newGirisler: Kayit[] = [];
+    anlikGirisler.forEach(k => {
+      if (!girisMapRef.current.has(k.ad)) {
+        girisMapRef.current.set(k.ad, k);
+        newGirisler.push(k);
+      }
+    });
 
-      // Yeni girişleri bul
-      const newGirisler: Kayit[] = [];
-      anlıkGirisler.forEach(k => {
-        if (!girisMapRef.current.has(k.ad)) {
-          girisMapRef.current.set(k.ad, k);
-          newGirisler.push(k);
-        }
-      });
+    const newCikislar: Kayit[] = [];
+    anlikCikislar.forEach(k => {
+      const existing = cikisMapRef.current.get(k.ad);
+      if (!existing || existing.ts < k.ts) {
+        cikisMapRef.current.set(k.ad, k);
+        newCikislar.push(k);
+      }
+    });
 
-      const newCikislar: Kayit[] = [];
-      anlıkCikislar.forEach(k => {
-        const existing = cikisMapRef.current.get(k.ad);
-        // Yeni çıkış VEYA daha sonraki bir çıkış (re-entry senaryosu)
-        if (!existing || existing.ts < k.ts) {
-          cikisMapRef.current.set(k.ad, k);
-          newCikislar.push(k);
-        }
-      });
+    const sortedG = [...girisMapRef.current.values()].sort((a, b) => b.ts - a.ts);
+    const sortedC = [...cikisMapRef.current.values()].sort((a, b) => b.ts - a.ts);
 
-      const sortedG = [...girisMapRef.current.values()].sort((a, b) => b.ts - a.ts);
-      const sortedC = [...cikisMapRef.current.values()].sort((a, b) => b.ts - a.ts);
+    // Sadece sayfa açıldıktan SONRA gerçekleşen kayıtlar seslendirilir
+    const anonsKesim = pageLoadTime.current;
 
-      // Sadece sayfa açıldıktan SONRA gerçekleşen kayıtlar seslendirilir
-      const anonsKesim = pageLoadTime.current;
-
-      if (isFirst.current) {
-        // İlk yüklemede sessizce göster
+    if (isFirst.current) {
+      setGirisler(sortedG);
+      setCikislar(sortedC);
+      isFirst.current = false;
+    } else {
+      if (newGirisler.length > 0) {
         setGirisler(sortedG);
-        setCikislar(sortedC);
-        isFirst.current = false;
-      } else {
-        if (newGirisler.length > 0) {
-          setGirisler(sortedG);
-          if (sesAcikRef.current) {
-            // Kronolojik sıra: en erken giren önce seslendirilir
-            const anons = newGirisler.filter(k => k.ts >= anonsKesim).sort((a, b) => a.ts - b.ts);
-            if (anons.length > 0) {
-              beepGiris();
-              anons.forEach(k => {
-                const metin = k.tur === 'personel'
-                  ? `Sayın ${k.ad}, hoş geldiniz.`
-                  : `Hoş geldiniz, ${k.ad}.`;
-                queueSpeech(metin);
-              });
-            }
-          }
-        }
-        if (newCikislar.length > 0) {
-          setCikislar(sortedC);
-          if (sesAcikRef.current) {
-            const anons = newCikislar.filter(k => k.ts >= anonsKesim).sort((a, b) => a.ts - b.ts);
-            if (anons.length > 0) {
-              beepCikis();
-              anons.forEach(k => {
-                const metin = k.tur === 'personel'
-                  ? `Sayın ${k.ad}, güle güle.`
-                  : `Güle güle, ${k.ad}.`;
-                queueSpeech(metin);
-              });
-            }
+        if (sesAcikRef.current) {
+          const anons = newGirisler.filter(k => k.ts >= anonsKesim).sort((a, b) => a.ts - b.ts);
+          if (anons.length > 0) {
+            beepGiris();
+            anons.forEach(k => {
+              const metin = k.tur === 'personel'
+                ? `Sayın ${k.ad}, hoş geldiniz.`
+                : `Hoş geldiniz, ${k.ad}.`;
+              queueSpeech(metin);
+            });
           }
         }
       }
-
-      const now = Date.now();
-      sonBasariRef.current = now;
-      setHata(false);
-      setSonGuncelleme(new Date(now).toLocaleTimeString('tr-TR',
-        { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-    } catch (e) {
-      console.error('[Ekran]', e);
-      setHata(true);
-    } finally {
-      isPollActive.current = false;
+      if (newCikislar.length > 0) {
+        setCikislar(sortedC);
+        if (sesAcikRef.current) {
+          const anons = newCikislar.filter(k => k.ts >= anonsKesim).sort((a, b) => a.ts - b.ts);
+          if (anons.length > 0) {
+            beepCikis();
+            anons.forEach(k => {
+              const metin = k.tur === 'personel'
+                ? `Sayın ${k.ad}, güle güle.`
+                : `Güle güle, ${k.ad}.`;
+              queueSpeech(metin);
+            });
+          }
+        }
+      }
     }
+
+    const now = Date.now();
+    sonBasariRef.current = now;
+    setHata(false);
+    setSonGuncelleme(new Date(now).toLocaleTimeString('tr-TR',
+      { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
   }, []);
 
   useEffect(() => {
@@ -261,38 +243,91 @@ function useBildirimEkrani(sesAcik: boolean) {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.getVoices();
     }
-    poll();
-    const t = setInterval(poll, 1000);
-    // 15 saniyedir başarılı veri gelmemişse kırmızıya dön
+
+    // ── SSE bağlantısı: ana veri kanalı ─────────────────────────────────
+    // Sunucu bağlantıda anında mevcut veriyi gönderir,
+    // ardından her BKDS güncellemesinde veriyi doğrudan push eder.
+    // Client'ın ayrıca fetch yapmasına gerek kalmaz.
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectDelay = 1000;
+
+    const connectSSE = () => {
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      es = new EventSource('/api/attendance/stream');
+
+      es.onopen = () => {
+        reconnectDelay = 1000; // Başarılı bağlantı — delay sıfırla
+        setSseAktif(true);
+      };
+
+      es.onmessage = (evt) => {
+        try {
+          const data = JSON.parse(evt.data);
+          if (data.type === 'ekranData') {
+            processData(data);
+          }
+        } catch {
+          // 'connected' gibi parse edilemeyen mesajlar — yoksay
+        }
+      };
+
+      es.onerror = () => {
+        setSseAktif(false);
+        es?.close();
+        // Üstel geri çekilme ile yeniden bağlan (max 10s)
+        reconnectTimer = setTimeout(connectSSE, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+      };
+    };
+
+    connectSSE();
+
+    // ── Yedek fetch: SSE kesilirse veri kaybını önle ─────────────────────
+    const fallbackPoll = setInterval(async () => {
+      // Son 20s içinde SSE'den veri geldiyse fetch atla
+      if (sonBasariRef.current > 0 && Date.now() - sonBasariRef.current < 20000) return;
+      try {
+        const res = await fetch('/api/attendance');
+        if (res.ok) processData(await res.json());
+      } catch {}
+    }, 20000);
+
+    // ── Hata kontrol: 20s boyunca veri gelmemişse uyar ───────────────────
     const hataKontrol = setInterval(() => {
-      if (sonBasariRef.current > 0 && Date.now() - sonBasariRef.current > 15000) {
+      if (sonBasariRef.current > 0 && Date.now() - sonBasariRef.current > 20000) {
         setHata(true);
       }
-    }, 3000);
+    }, 5000);
+
+    // Sekme görünür olduğunda kuyruğu temizle
     const onVis = () => {
       if (document.visibilityState === 'visible') {
-        poll();
-        // Arka planda biriken kuyruğun en fazla son 2 öğesini tut
         if (speechQueue.length > 2) speechQueue.splice(0, speechQueue.length - 2);
         if (!speechBusy) pumpSpeech();
+        // SSE kopmuşsa yeniden bağlan
+        if (es?.readyState === EventSource.CLOSED) connectSSE();
       }
     };
     document.addEventListener('visibilitychange', onVis);
+
     return () => {
-      clearInterval(t);
+      es?.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      clearInterval(fallbackPoll);
       clearInterval(hataKontrol);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, [poll]);
+  }, [processData]);
 
-  return { girisler, cikislar, sonGuncelleme, hata };
+  return { girisler, cikislar, sonGuncelleme, hata, sseAktif };
 }
 
 export default function EkranPage() {
   const [sesAcik, setSesAcik] = useState(true);
   const [menuGizli, setMenuGizli] = useState(false);
 
-  const { girisler, cikislar, sonGuncelleme, hata } = useBildirimEkrani(sesAcik);
+  const { girisler, cikislar, sonGuncelleme, hata, sseAktif } = useBildirimEkrani(sesAcik);
   const girisListRef = useRef<HTMLDivElement>(null);
   const cikisListRef = useRef<HTMLDivElement>(null);
   const [saat, setSaat] = useState('');
@@ -341,6 +376,12 @@ export default function EkranPage() {
           </span>
           <span className="flex items-center gap-1.5 text-xs text-gray-500">
             <span className="w-2.5 h-2.5 rounded-full bg-purple-500 inline-block" /> Personel
+          </span>
+          <div className="h-4 w-px bg-gray-700" />
+          {/* SSE durumu */}
+          <span className={`flex items-center gap-1 text-xs ${sseAktif ? 'text-cyan-600' : 'text-gray-700'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${sseAktif ? 'bg-cyan-500' : 'bg-gray-700'}`} />
+            {sseAktif ? 'Canlı' : 'Bağlanıyor'}
           </span>
           <div className="h-4 w-px bg-gray-700" />
           {/* Ses toggle */}

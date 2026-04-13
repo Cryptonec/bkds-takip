@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getBkdsService } from './bkdsProviderService';
 import { recalculateAttendance, recalculateStaffAttendance } from './attendanceService';
 import { generateAlerts } from './alertService';
+import { getEkranData } from './ekranDataService';
 
 export const bkdsEvents = new EventEmitter();
 bkdsEvents.setMaxListeners(200);
@@ -37,8 +38,9 @@ export async function runBkdsPollForOrg(organizationId: string): Promise<void> {
 
     // ── HIZLI YOL: ekranı hemen bildir ──────────────────────────────────
     // saveAndAggregate BkdsAggregate + BkdsPersonelLog'u güncelledi.
-    // Ekran bu tabloları okur → recalculate beklemeye gerek yok.
-    bkdsEvents.emit('update', { organizationId });
+    // Ekran verisini hemen sorgula ve SSE ile push et — client fetch yapmak zorunda kalmaz.
+    const ekranData = await getEkranData(organizationId);
+    bkdsEvents.emit('update', { organizationId, ekranData });
     console.log(`[BKDS][${organizationId}] Ekran güncellendi (${Date.now() - t0}ms)`);
 
   } catch (err) {
@@ -79,7 +81,7 @@ export function isPollingActive(organizationId: string): boolean {
 export async function ensurePollerRunning(organizationId: string): Promise<void> {
   if (isPollingActive(organizationId)) return;
   const envInterval = Number(process.env.BKDS_POLL_INTERVAL);
-  const interval = envInterval > 0 && !isNaN(envInterval) ? envInterval : 3000; // varsayılan 3s
+  const interval = envInterval > 0 && !isNaN(envInterval) ? envInterval : 2000; // varsayılan 2s
   startPollingForOrg(organizationId, interval);
 }
 
@@ -91,7 +93,7 @@ export async function startAllPollers(): Promise<void> {
     include: { credentials: { select: { pollInterval: true } } },
   });
   for (const org of orgs) {
-    const interval = useEnv ? envInterval : (org.credentials[0]?.pollInterval ?? 3000); // varsayılan 3s
+    const interval = useEnv ? envInterval : (org.credentials[0]?.pollInterval ?? 2000); // varsayılan 2s
     startPollingForOrg(org.id, interval);
   }
 }
