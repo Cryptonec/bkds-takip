@@ -60,29 +60,29 @@ enum SubscriptionPlan {
 model Organization {
   id          String           @id @default(cuid())
   name        String
-  slug        String           @unique  // Rehapp org_slug ile eşleşmeli
+  slug        String           @unique // Rehapp org_slug ile eşleşmeli
   active      Boolean          @default(true)
   plan        SubscriptionPlan @default(trial)
   trialEndsAt DateTime?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
-  users        User[]
-  credentials  BkdsCredential[]
-  ssoTokens    SsoToken[]
-  students     Student[]
-  staff        Staff[]
-  lessonSessions LessonSession[]
-  staffSessions  StaffSession[]
-  bkdsRaw      BkdsRaw[]
-  bkdsAggregates BkdsAggregate[]
-  attendances  Attendance[]
+  users            User[]
+  credentials      BkdsCredential[]
+  ssoTokens        SsoToken[]
+  students         Student[]
+  staff            Staff[]
+  lessonSessions   LessonSession[]
+  staffSessions    StaffSession[]
+  bkdsRaw          BkdsRaw[]
+  bkdsAggregates   BkdsAggregate[]
+  attendances      Attendance[]
   staffAttendances StaffAttendance[]
-  importJobs   ImportJob[]
-  alerts       Alert[]
+  importJobs       ImportJob[]
+  alerts           Alert[]
   bkdsPersonelLogs BkdsPersonelLog[]
   systemSettings   SystemSetting[]
-  actionLogs   ActionLog[]
+  actionLogs       ActionLog[]
 }
 
 model BkdsCredential {
@@ -90,10 +90,10 @@ model BkdsCredential {
   organization   Organization @relation(fields: [organizationId], references: [id])
   organizationId String       @unique
   username       String
-  password       String       // encrypt edilmeli prod'da
-  cityId         String    @default("")
-  districtId     String    @default("")
-  remId          String    @default("")
+  password       String // encrypt edilmeli prod'da
+  cityId         String       @default("")
+  districtId     String       @default("")
+  remId          String       @default("")
   apiUrl         String       @default("https://bkds-api.meb.gov.tr")
   pollInterval   Int          @default(60000)
   createdAt      DateTime     @default(now())
@@ -117,16 +117,16 @@ model SsoToken {
 // ─── Kullanıcı ───────────────────────────────────────────────────────────────
 
 model User {
-  id             String       @id @default(cuid())
-  email          String       @unique
+  id             String        @id @default(cuid())
+  email          String        @unique
   name           String
   password       String
-  role           Role         @default(danisma)
-  active         Boolean      @default(true)
+  role           Role          @default(danisma)
+  active         Boolean       @default(true)
   organization   Organization? @relation(fields: [organizationId], references: [id])
   organizationId String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   actionLogs ActionLog[]
 }
@@ -187,8 +187,8 @@ model LessonSession {
   importJobId    String?
   createdAt      DateTime     @default(now())
 
-  attendance   Attendance?
-  importJob    ImportJob?   @relation(fields: [importJobId], references: [id])
+  attendance Attendance?
+  importJob  ImportJob?  @relation(fields: [importJobId], references: [id])
 
   @@index([tarih])
   @@index([studentId, tarih])
@@ -317,16 +317,16 @@ model SystemSetting {
 }
 
 model ActionLog {
-  id             String       @id @default(cuid())
+  id             String        @id @default(cuid())
   organization   Organization? @relation(fields: [organizationId], references: [id])
   organizationId String?
-  user           User?        @relation(fields: [userId], references: [id])
+  user           User?         @relation(fields: [userId], references: [id])
   userId         String?
   action         String
   entity         String?
   entityId       String?
   details        Json?
-  createdAt      DateTime     @default(now())
+  createdAt      DateTime      @default(now())
 
   @@index([createdAt])
   @@index([organizationId])
