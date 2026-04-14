@@ -8,9 +8,9 @@ import { getStaffStatusInfo } from '@/lib/services/staffAttendanceEngine';
 import { getBkdsService } from '@/lib/services/bkdsProviderService';
 import { prisma } from '@/lib/prisma';
 
-// Per-org son çekim zamanı
+// Per-org son çekim zamanı — sadece poller çalışmıyorsa fallback olarak devreye girer
 const lastBkdsFetchMap = new Map<string, number>();
-const BKDS_FETCH_INTERVAL = 5000;
+const BKDS_FETCH_INTERVAL = 30000; // Poller ile çakışmayı önlemek için daha seyrek
 
 function capitalizeDerslik(str: string): string {
   return str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -32,17 +32,15 @@ export async function GET(req: NextRequest) {
   const lastFetch = lastBkdsFetchMap.get(orgId) ?? 0;
   const shouldFetch = (now.getTime() - lastFetch) >= BKDS_FETCH_INTERVAL;
   if (shouldFetch) {
-    try {
-      lastBkdsFetchMap.set(orgId, now.getTime());
-      const service = getBkdsService(orgId);
-      const records = await service.fetchToday();
-      await service.saveAndAggregate(records, tarih);
-      await recalculateAttendance(tarih, orgId, now);
-      await recalculateStaffAttendance(tarih, orgId, now);
-      await generateAlerts(tarih, orgId);
-    } catch (err) {
-      console.error('[Attendance API] BKDS hatası:', err);
-    }
+    // Arka planda çalıştır — yanıtı bloklama
+    lastBkdsFetchMap.set(orgId, now.getTime());
+    const service = getBkdsService(orgId);
+    service.fetchToday()
+      .then(records => service.saveAndAggregate(records, tarih))
+      .then(() => recalculateAttendance(tarih, orgId, now))
+      .then(() => recalculateStaffAttendance(tarih, orgId, now))
+      .then(() => generateAlerts(tarih, orgId))
+      .catch(err => console.error('[Attendance API] BKDS arka plan hatası:', err));
   }
 
   const [attendances, staffAttendances, alerts, personelLog] = await Promise.all([

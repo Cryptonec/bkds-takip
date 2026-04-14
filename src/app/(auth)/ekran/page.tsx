@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { UserCheck, LogOut, Volume2, VolumeX, GraduationCap, User, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { UserCheck, LogOut, Volume2, VolumeX, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 interface Kayit {
   id: string;
@@ -11,200 +11,264 @@ interface Kayit {
   ts: number;
 }
 
-const MAX_NORMAL = 5;
-const MAX_FULLSCREEN = 10;
-
-function calarGiris() {
-  try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = 'sine';
-    o.frequency.value = 880;
-    o.connect(g); g.connect(ctx.destination);
-    g.gain.setValueAtTime(0.3, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-    o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.4);
-  } catch {}
-}
-
-function calarCikis() {
-  try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = 'sine';
-    o.frequency.value = 523;
-    o.connect(g); g.connect(ctx.destination);
-    g.gain.setValueAtTime(0.25, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-    o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.4);
-  } catch {}
+function fmt(iso: string) {
+  return new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
 }
 
 function cozIsim(k: string, ad: string): string {
   if (!ad.includes('*')) return ad;
   if (typeof window === 'undefined') return ad;
-  return localStorage.getItem(`pname_${k}_${ad.substring(0,4)}`) ?? ad;
+  return localStorage.getItem(`pname_${k}_${ad.substring(0, 4)}`) ?? ad;
 }
 
-function fmt(iso: string) {
-  return new Date(iso).toLocaleTimeString('tr-TR', { hour:'2-digit', minute:'2-digit' });
+// ── Ses: beep ────────────────────────────────────────────────────────────────
+let sharedAudioCtx: AudioContext | null = null;
+function getAudioCtx(): AudioContext {
+  if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+    sharedAudioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  }
+  return sharedAudioCtx;
 }
 
-function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
-  // Tek kaynak: tüm giriş ve çıkışları ad→Kayit Map olarak tut
-  const girisMapRef = useRef<Map<string,Kayit>>(new Map());
-  const cikisMapRef = useRef<Map<string,Kayit>>(new Map());
+function calarGiris() {
+  try {
+    const ctx = getAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+    const g = ctx.createGain();
+    g.connect(ctx.destination);
+    [880, 1100].forEach((freq, i) => {
+      const o = ctx.createOscillator();
+      o.type = 'sine'; o.frequency.value = freq;
+      o.connect(g);
+      const t = ctx.currentTime + i * 0.18;
+      g.gain.setValueAtTime(0.25, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+      o.start(t); o.stop(t + 0.16);
+    });
+  } catch {}
+}
+
+function calarCikis() {
+  try {
+    const ctx = getAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+    const g = ctx.createGain();
+    g.connect(ctx.destination);
+    [660, 440].forEach((freq, i) => {
+      const o = ctx.createOscillator();
+      o.type = 'sine'; o.frequency.value = freq;
+      o.connect(g);
+      const t = ctx.currentTime + i * 0.18;
+      g.gain.setValueAtTime(0.22, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+      o.start(t); o.stop(t + 0.16);
+    });
+  } catch {}
+}
+
+// ── TTS kuyruğu ───────────────────────────────────────────────────────────────
+const speechQueue: string[] = [];
+let speechBusy = false;
+let speechWatchdog: ReturnType<typeof setTimeout> | null = null;
+
+function pumpSpeech() {
+  if (speechWatchdog) { clearTimeout(speechWatchdog); speechWatchdog = null; }
+  if (speechQueue.length === 0) { speechBusy = false; return; }
+  if (document.hidden) { speechBusy = false; return; }
+  if (!('speechSynthesis' in window)) { speechQueue.length = 0; speechBusy = false; return; }
+  speechBusy = true;
+  const text = speechQueue.shift()!;
+  const utt = new SpeechSynthesisUtterance(text.toLocaleLowerCase('tr-TR'));
+  utt.lang = 'tr-TR'; utt.rate = 1.05; utt.pitch = 1.0; utt.volume = 1.0;
+  const trVoice = window.speechSynthesis.getVoices().find(v => v.lang.startsWith('tr'));
+  if (trVoice) utt.voice = trVoice;
+  const next = () => { if (speechWatchdog) { clearTimeout(speechWatchdog); speechWatchdog = null; } setTimeout(pumpSpeech, 100); };
+  utt.onend = next; utt.onerror = next;
+  speechWatchdog = setTimeout(next, 5000); // Chrome watchdog
+  window.speechSynthesis.speak(utt);
+}
+
+function queueSpeech(text: string) {
+  if (!text || text.includes('*')) return;
+  if (speechQueue.length >= 3) speechQueue.shift(); // Kuyruk limitini aş — gecikmeyi önle
+  speechQueue.push(text);
+  if (!speechBusy) pumpSpeech();
+}
+
+// ── Ana hook ──────────────────────────────────────────────────────────────────
+function useBildirimEkrani(sesAcik: boolean) {
+  const girisMapRef = useRef<Map<string, Kayit>>(new Map());
+  const cikisMapRef = useRef<Map<string, Kayit>>(new Map());
   const [girisler, setGirisler] = useState<Kayit[]>([]);
   const [cikislar, setCikislar] = useState<Kayit[]>([]);
   const [sonGuncelleme, setSonGuncelleme] = useState('');
+  const [hata, setHata] = useState(false);
+  const sonBasariRef = useRef<number>(0);
+  const hataArdisikRef = useRef<number>(0);
   const sesAcikRef = useRef(sesAcik);
-  const maxRef = useRef(max);
   const isFirst = useRef(true);
-  const prevGirisHash = useRef('');
-  const prevCikisHash = useRef('');
+  const isPollActive = useRef(false);
+  const pageLoadTime = useRef<number>(Date.now());
 
   useEffect(() => { sesAcikRef.current = sesAcik; }, [sesAcik]);
-  useEffect(() => { 
-    maxRef.current = max;
-    // max değişince listeyi güncelle
-    commitGiris(false, max);
-    commitCikis(false, max);
-  }, [max]);
-
-  function commitGiris(ses: boolean, maxSayi?: number) {
-    const n = maxSayi ?? maxRef.current;
-    const sorted = [...girisMapRef.current.values()]
-      .sort((a,b) => b.ts - a.ts)
-      .slice(0, n);
-    setGirisler(sorted);
-    if (ses && sesAcikRef.current) calarGiris();
-  }
-
-  function commitCikis(ses: boolean, maxSayi?: number) {
-    const n = maxSayi ?? maxRef.current;
-    const sorted = [...cikisMapRef.current.values()]
-      .sort((a,b) => b.ts - a.ts)
-      .slice(0, n);
-    setCikislar(sorted);
-    if (ses && sesAcikRef.current) calarCikis();
-  }
 
   const poll = useCallback(async () => {
+    if (isPollActive.current) return;
+    isPollActive.current = true;
     try {
       const res = await fetch('/api/attendance');
-      if (!res.ok) return;
+      if (!res.ok) {
+        hataArdisikRef.current += 1;
+        if (hataArdisikRef.current >= 3) setHata(true);
+        return;
+      }
       const json = await res.json();
-      const ogrenciRows = json.ogrenciRows ?? [];
-      const personelRows = json.personelRows ?? [];
-      const tumPersonel = json.tumPersonelGirisler ?? [];
+      const ogrenciRows: any[] = json.ogrenciRows ?? [];
+      const personelRows: any[] = json.personelRows ?? [];
+      const tumPersonel: any[] = json.tumPersonelGirisler ?? [];
 
-      // Tüm girişleri topla
-      const yeniGirisler: Kayit[] = [];
-      const yeniCikislar: Kayit[] = [];
+      const anlıkGirisler: Kayit[] = [];
+      const anlıkCikislar: Kayit[] = [];
 
-      // Öğrenci girişleri
-      ogrenciRows.filter((r:any) => r.gercekGiris).forEach((r:any) => {
-        yeniGirisler.push({ id:`og-${r.ogrenciId}`, tip:'giris', tur:'ogrenci',
+      ogrenciRows.filter(r => r.gercekGiris).forEach(r => {
+        anlıkGirisler.push({ id: `og-${r.ogrenciId}`, tip: 'giris', tur: 'ogrenci',
           ad: r.ogrenciAdi, saat: fmt(r.gercekGiris), ts: new Date(r.gercekGiris).getTime() });
       });
-      ogrenciRows.filter((r:any) => r.gercekCikis).forEach((r:any) => {
-        yeniCikislar.push({ id:`oc-${r.ogrenciId}`, tip:'cikis', tur:'ogrenci',
+      ogrenciRows.filter(r => r.gercekCikis).forEach(r => {
+        anlıkCikislar.push({ id: `oc-${r.ogrenciId}`, tip: 'cikis', tur: 'ogrenci',
           ad: r.ogrenciAdi, saat: fmt(r.gercekCikis), ts: new Date(r.gercekCikis).getTime() });
       });
 
-      // Personel girişleri
       const pgKeys = new Set<string>();
-      personelRows.filter((r:any) => r.baslamaZamani).forEach((r:any) => {
+      personelRows.filter(r => r.baslamaZamani).forEach(r => {
         pgKeys.add(r.staffId);
-        yeniGirisler.push({ id:`pg-${r.staffId}`, tip:'giris', tur:'personel',
+        anlıkGirisler.push({ id: `pg-${r.staffId}`, tip: 'giris', tur: 'personel',
           ad: r.ogretmenAdi, saat: fmt(r.baslamaZamani), ts: new Date(r.baslamaZamani).getTime() });
       });
-      tumPersonel.forEach((p:any) => {
+      tumPersonel.forEach(p => {
         const k = p.staffId ?? p.ogretmenAdi;
         if (!pgKeys.has(k) && p.ilkGiris) {
           const ad = cozIsim(k, p.ogretmenAdi);
           if (!ad.includes('*'))
-            yeniGirisler.push({ id:`tp-${k}`, tip:'giris', tur:'personel',
+            anlıkGirisler.push({ id: `tp-${k}`, tip: 'giris', tur: 'personel',
               ad, saat: fmt(p.ilkGiris), ts: new Date(p.ilkGiris).getTime() });
         }
       });
 
-      // Personel çıkışları
       const pcKeys = new Set<string>();
-      personelRows.filter((r:any) => r.sonCikisZamani).forEach((r:any) => {
+      personelRows.filter(r => r.sonCikisZamani).forEach(r => {
         pcKeys.add(r.staffId);
-        yeniCikislar.push({ id:`pc-${r.staffId}`, tip:'cikis', tur:'personel',
+        anlıkCikislar.push({ id: `pc-${r.staffId}`, tip: 'cikis', tur: 'personel',
           ad: r.ogretmenAdi, saat: fmt(r.sonCikisZamani), ts: new Date(r.sonCikisZamani).getTime() });
       });
-      tumPersonel.filter((p:any) => p.sonCikis).forEach((p:any) => {
+      tumPersonel.filter(p => p.sonCikis).forEach(p => {
         const k = p.staffId ?? p.ogretmenAdi;
         if (!pcKeys.has(k)) {
           const ad = cozIsim(k, p.ogretmenAdi);
           if (!ad.includes('*'))
-            yeniCikislar.push({ id:`tpc-${k}`, tip:'cikis', tur:'personel',
+            anlıkCikislar.push({ id: `tpc-${k}`, tip: 'cikis', tur: 'personel',
               ad, saat: fmt(p.sonCikis), ts: new Date(p.sonCikis).getTime() });
         }
       });
 
-      // Hash: mevcut ID listesi
-      const girisHash = yeniGirisler.map(x=>x.id).sort().join(',');
-      const cikisHash = yeniCikislar.map(x=>x.id).sort().join(',');
-
-      // Giriş map güncelle
-      let girisChanged = false;
-      yeniGirisler.forEach(k => {
+      const newGirisler: Kayit[] = [];
+      anlıkGirisler.forEach(k => {
         if (!girisMapRef.current.has(k.ad)) {
           girisMapRef.current.set(k.ad, k);
-          girisChanged = true;
+          newGirisler.push(k);
         }
       });
-
-      // Çıkış map güncelle
-      let cikisChanged = false;
-      yeniCikislar.forEach(k => {
-        if (!cikisMapRef.current.has(k.ad)) {
+      const newCikislar: Kayit[] = [];
+      anlıkCikislar.forEach(k => {
+        const existing = cikisMapRef.current.get(k.ad);
+        if (!existing || existing.ts < k.ts) {
           cikisMapRef.current.set(k.ad, k);
-          cikisChanged = true;
+          newCikislar.push(k);
         }
       });
 
-      // İlk yüklemede sessiz güncelle
+      const sortedG = [...girisMapRef.current.values()].sort((a, b) => b.ts - a.ts);
+      const sortedC = [...cikisMapRef.current.values()].sort((a, b) => b.ts - a.ts);
+      const anonsKesim = pageLoadTime.current - 2 * 60 * 1000;
+
       if (isFirst.current) {
-        yeniGirisler.forEach(k => girisMapRef.current.set(k.ad, k));
-        yeniCikislar.forEach(k => cikisMapRef.current.set(k.ad, k));
-        commitGiris(false, max);
-        commitCikis(false, max);
+        setGirisler(sortedG);
+        setCikislar(sortedC);
         isFirst.current = false;
       } else {
-        // Sadece yeni kayıt varsa güncelle ve ses çal
-        if (girisChanged) commitGiris(true, max);
-        if (cikisChanged) commitCikis(true, max);
-        // max değişince de güncelle (fullscreen toggle)
-        if (!girisChanged && !cikisChanged) {
-          commitGiris(false, max);
-          commitCikis(false, max);
+        if (newGirisler.length > 0) {
+          setGirisler(sortedG);
+          if (sesAcikRef.current) {
+            const anons = newGirisler.filter(k => k.ts >= anonsKesim).sort((a, b) => a.ts - b.ts);
+            if (anons.length > 0) {
+              calarGiris();
+              anons.forEach(k => queueSpeech(
+                k.tur === 'personel' ? `Sayın ${k.ad}, hoş geldiniz.` : `Hoş geldiniz, ${k.ad}.`
+              ));
+            }
+          }
+        }
+        if (newCikislar.length > 0) {
+          setCikislar(sortedC);
+          if (sesAcikRef.current) {
+            const anons = newCikislar.filter(k => k.ts >= anonsKesim).sort((a, b) => a.ts - b.ts);
+            if (anons.length > 0) {
+              calarCikis();
+              anons.forEach(k => queueSpeech(
+                k.tur === 'personel' ? `Sayın ${k.ad}, güle güle.` : `Güle güle, ${k.ad}.`
+              ));
+            }
+          }
         }
       }
 
-      prevGirisHash.current = girisHash;
-      prevCikisHash.current = cikisHash;
-      setSonGuncelleme(new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}));
-    } catch(e) { console.error('[Ekran]', e); }
+      const now = Date.now();
+      sonBasariRef.current = now;
+      hataArdisikRef.current = 0;
+      setHata(false);
+      setSonGuncelleme(new Date(now).toLocaleTimeString('tr-TR',
+        { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    } catch (e) {
+      console.error('[Ekran]', e);
+      hataArdisikRef.current += 1;
+      if (hataArdisikRef.current >= 3) setHata(true);
+    } finally {
+      isPollActive.current = false;
+    }
   }, []);
 
   useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.getVoices();
+    }
     poll();
     const t = setInterval(poll, 2000);
-    const onVis = () => { if (document.visibilityState==='visible') poll(); };
+    // 30s boyunca başarılı veri gelmemişse kırmızıya dön
+    const hataKontrol = setInterval(() => {
+      if (sonBasariRef.current > 0 && Date.now() - sonBasariRef.current > 30000) {
+        setHata(true);
+      }
+    }, 5000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        hataArdisikRef.current = 0;
+        poll();
+        if (speechQueue.length > 2) speechQueue.splice(0, speechQueue.length - 2);
+        if (!speechBusy) pumpSpeech();
+      }
+    };
     document.addEventListener('visibilitychange', onVis);
-    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis); };
+    return () => {
+      clearInterval(t);
+      clearInterval(hataKontrol);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [poll]);
 
-  return { girisler, cikislar, sonGuncelleme };
+  return { girisler, cikislar, sonGuncelleme, hata };
 }
 
+// ── Sayfa ─────────────────────────────────────────────────────────────────────
 export default function EkranPage() {
   const [sesAcik, setSesAcik] = useState(true);
   const [menuGizli, setMenuGizli] = useState(false);
@@ -216,21 +280,27 @@ export default function EkranPage() {
     return () => document.removeEventListener('fullscreenchange', onFS);
   }, []);
 
-  const MAX = isFullscreen ? MAX_FULLSCREEN : MAX_NORMAL;
-  const { girisler, cikislar, sonGuncelleme } = useBildirimEkrani(sesAcik, MAX);
+  const { girisler, cikislar, sonGuncelleme, hata } = useBildirimEkrani(sesAcik);
+  const girisListRef = useRef<HTMLDivElement>(null);
+  const cikisListRef = useRef<HTMLDivElement>(null);
   const [saat, setSaat] = useState('');
   const [tarih, setTarih] = useState('');
+
+  useEffect(() => { girisListRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }, [girisler]);
+  useEffect(() => { cikisListRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }, [cikislar]);
 
   useEffect(() => {
     const tick = () => {
       const now = new Date();
-      setSaat(now.toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}));
-      setTarih(now.toLocaleDateString('tr-TR', {weekday:'long',day:'numeric',month:'long',year:'numeric'}));
+      setSaat(now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      setTarih(now.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
     };
     tick();
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
   }, []);
+
+  const MAX = isFullscreen ? 10 : 5;
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col select-none overflow-hidden">
@@ -238,30 +308,48 @@ export default function EkranPage() {
       {/* Üst bar */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-gray-800 shrink-0">
         <div className="flex items-center gap-4">
-          {/* Menü gizle/göster */}
           <button
             onClick={() => setMenuGizli(v => !v)}
             className="w-9 h-9 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
             title={menuGizli ? 'Menüyü Göster' : 'Menüyü Gizle'}
           >
-            {menuGizli
-              ? <PanelLeftOpen className="w-4 h-4" />
-              : <PanelLeftClose className="w-4 h-4" />
-            }
+            {menuGizli ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
           </button>
           <div>
             <p className="text-4xl font-bold tabular-nums tracking-tight leading-none">{saat}</p>
             <p className="text-gray-500 text-xs mt-0.5 capitalize">{tarih}</p>
+            {sonGuncelleme && (
+              <p className="text-gray-600 text-xs mt-0.5">Son veri: {sonGuncelleme}</p>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right">
-            <p className="text-gray-300 font-semibold">Özel Kütahya Umut</p>
-            <p className="text-gray-600 text-xs">Özel Eğitim ve Rehabilitasyon Merkezi</p>
-          </div>
-          {/* Tam ekran */}
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> Öğrenci
+          </span>
+          <span className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className="w-2.5 h-2.5 rounded-full bg-purple-500 inline-block" /> Personel
+          </span>
+          <div className="h-4 w-px bg-gray-700" />
           <button
-            onClick={() => !document.fullscreenElement ? document.documentElement.requestFullscreen() : document.exitFullscreen()}
+            onClick={() => setSesAcik(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+              sesAcik ? 'bg-green-900/60 border-green-700 text-green-400' : 'bg-gray-800 border-gray-700 text-gray-500'
+            }`}
+          >
+            {sesAcik ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            {sesAcik ? 'Ses Açık' : 'Ses Kapalı'}
+          </button>
+          {/* Bağlantı göstergesi */}
+          <span
+            className={`w-2 h-2 rounded-full animate-pulse ${hata ? 'bg-red-500' : 'bg-green-500'}`}
+            title={hata ? 'Bağlantı sorunu' : 'Canlı'}
+          />
+          <div className="h-4 w-px bg-gray-700" />
+          <button
+            onClick={() => !document.fullscreenElement
+              ? document.documentElement.requestFullscreen()
+              : document.exitFullscreen()}
             className="w-9 h-9 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
             title="Tam Ekran"
           >
@@ -285,12 +373,13 @@ export default function EkranPage() {
               <p className="text-lg font-black text-green-400 uppercase tracking-widest">Giriş</p>
               <p className="text-xs text-green-700">Hoş Geldiniz</p>
             </div>
-            <span className="ml-auto w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="ml-auto text-xs text-green-800 tabular-nums">{girisler.length}</span>
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
           </div>
-          <div className="flex-1 flex flex-col gap-1.5 px-3 py-2 overflow-hidden">
+          <div ref={girisListRef} className="flex-1 flex flex-col gap-1.5 px-3 py-2 overflow-y-auto">
             {girisler.length === 0
-              ? <div className="flex-1 flex items-center justify-center"><p className="text-gray-700 text-3xl">—</p></div>
-              : girisler.map((k,i) => <BildirimsalKart key={k.id} kayit={k} index={i} total={girisler.length} />)
+              ? <div className="flex items-center justify-center py-12"><p className="text-gray-700 text-3xl">—</p></div>
+              : girisler.slice(0, MAX).map((k, i) => <BildirimsalKart key={k.id} kayit={k} index={i} />)
             }
           </div>
         </div>
@@ -305,43 +394,18 @@ export default function EkranPage() {
               <p className="text-lg font-black text-orange-400 uppercase tracking-widest">Çıkış</p>
               <p className="text-xs text-orange-700">Güle Güle</p>
             </div>
-            <span className="ml-auto w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+            <span className="ml-auto text-xs text-orange-800 tabular-nums">{cikislar.length}</span>
+            <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
           </div>
-          <div className="flex-1 flex flex-col gap-1.5 px-3 py-2 overflow-hidden">
+          <div ref={cikisListRef} className="flex-1 flex flex-col gap-1.5 px-3 py-2 overflow-y-auto">
             {cikislar.length === 0
-              ? <div className="flex-1 flex items-center justify-center"><p className="text-gray-700 text-3xl">—</p></div>
-              : cikislar.map((k,i) => <BildirimsalKart key={k.id} kayit={k} index={i} total={cikislar.length} />)
+              ? <div className="flex items-center justify-center py-12"><p className="text-gray-700 text-3xl">—</p></div>
+              : cikislar.slice(0, MAX).map((k, i) => <BildirimsalKart key={k.id} kayit={k} index={i} />)
             }
           </div>
         </div>
       </div>
 
-      {/* Alt bar */}
-      <div className="px-6 py-2 border-t border-gray-800 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-4 text-xs text-gray-600">
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-blue-500 inline-block" /> Öğrenci
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-purple-500 inline-block" /> Personel
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setSesAcik(v => !v)}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-              sesAcik ? 'bg-green-900/60 border-green-700 text-green-400' : 'bg-gray-800 border-gray-700 text-gray-500'
-            }`}
-          >
-            {sesAcik ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-            {sesAcik ? 'Ses Açık' : 'Ses Kapalı'}
-          </button>
-          <span className="text-gray-700 text-xs">{sonGuncelleme ? `${sonGuncelleme}` : 'Bağlanıyor...'}</span>
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-        </div>
-      </div>
-
-      {/* Menü gizleme overlay */}
       {menuGizli && (
         <style>{`
           nav, aside, [data-sidebar] { display: none !important; }
@@ -352,41 +416,39 @@ export default function EkranPage() {
   );
 }
 
-// Seviye stilleri — YENİ badge yok
+// ── Kart ─────────────────────────────────────────────────────────────────────
 const SEVIYE = [
-  { girisKart:'bg-green-700 border-2 border-green-400 shadow-lg shadow-green-900/40',
-    cikisKart:'bg-orange-700 border-2 border-orange-400 shadow-lg shadow-orange-900/40',
-    ogrenciIkon:'bg-blue-500', personelIkon:'bg-purple-500',
-    metin:'text-white', saat:'text-white/80', ad:'text-3xl', saatSize:'text-2xl', ikon:'w-14 h-14' },
-  { girisKart:'bg-green-900/80 border border-green-600',
-    cikisKart:'bg-orange-900/80 border border-orange-600',
-    ogrenciIkon:'bg-blue-600', personelIkon:'bg-purple-600',
-    metin:'text-green-100', saat:'text-green-300', ad:'text-2xl', saatSize:'text-xl', ikon:'w-12 h-12' },
-  { girisKart:'bg-green-950/50 border border-green-800/40',
-    cikisKart:'bg-orange-950/50 border border-orange-800/40',
-    ogrenciIkon:'bg-blue-700', personelIkon:'bg-purple-700',
-    metin:'text-green-300', saat:'text-green-500', ad:'text-xl', saatSize:'text-lg', ikon:'w-11 h-11' },
-  { girisKart:'bg-gray-900/50 border border-gray-700',
-    cikisKart:'bg-gray-900/50 border border-gray-700',
-    ogrenciIkon:'bg-gray-600', personelIkon:'bg-gray-600',
-    metin:'text-gray-400', saat:'text-gray-500', ad:'text-lg', saatSize:'text-base', ikon:'w-10 h-10' },
-  { girisKart:'bg-gray-900/20 border border-gray-800',
-    cikisKart:'bg-gray-900/20 border border-gray-800',
-    ogrenciIkon:'bg-gray-800', personelIkon:'bg-gray-800',
-    metin:'text-gray-500', saat:'text-gray-600', ad:'text-base', saatSize:'text-sm', ikon:'w-9 h-9' },
+  { girisKart: 'bg-green-700 border-2 border-green-400 shadow-lg shadow-green-900/40',
+    cikisKart: 'bg-orange-700 border-2 border-orange-400 shadow-lg shadow-orange-900/40',
+    ogrenciIkon: 'bg-blue-500', personelIkon: 'bg-purple-500',
+    metin: 'text-white', saat: 'text-white/80', ad: 'text-3xl', saatSize: 'text-2xl', ikon: 'w-14 h-14' },
+  { girisKart: 'bg-green-900/80 border border-green-600',
+    cikisKart: 'bg-orange-900/80 border border-orange-600',
+    ogrenciIkon: 'bg-blue-600', personelIkon: 'bg-purple-600',
+    metin: 'text-green-100', saat: 'text-green-300', ad: 'text-2xl', saatSize: 'text-xl', ikon: 'w-12 h-12' },
+  { girisKart: 'bg-green-950/50 border border-green-800/40',
+    cikisKart: 'bg-orange-950/50 border border-orange-800/40',
+    ogrenciIkon: 'bg-blue-700', personelIkon: 'bg-purple-700',
+    metin: 'text-green-300', saat: 'text-green-500', ad: 'text-xl', saatSize: 'text-lg', ikon: 'w-11 h-11' },
+  { girisKart: 'bg-gray-900/50 border border-gray-700',
+    cikisKart: 'bg-gray-900/50 border border-gray-700',
+    ogrenciIkon: 'bg-gray-600', personelIkon: 'bg-gray-600',
+    metin: 'text-gray-400', saat: 'text-gray-500', ad: 'text-lg', saatSize: 'text-base', ikon: 'w-10 h-10' },
+  { girisKart: 'bg-gray-900/20 border border-gray-800',
+    cikisKart: 'bg-gray-900/20 border border-gray-800',
+    ogrenciIkon: 'bg-gray-800', personelIkon: 'bg-gray-800',
+    metin: 'text-gray-500', saat: 'text-gray-600', ad: 'text-base', saatSize: 'text-sm', ikon: 'w-9 h-9' },
 ];
 
-function BildirimsalKart({ kayit, index, total = 5 }: { kayit: Kayit; index: number; total?: number }) {
+function BildirimsalKart({ kayit, index }: { kayit: Kayit; index: number }) {
   const isGiris = kayit.tip === 'giris';
-  const s = SEVIYE[Math.min(index, SEVIYE.length-1)];
+  const s = SEVIYE[Math.min(index, SEVIYE.length - 1)];
   const kart = isGiris ? s.girisKart : s.cikisKart;
   const ikonBg = kayit.tur === 'ogrenci' ? s.ogrenciIkon : s.personelIkon;
-
-  // Ekranı eşit böl: flex-1 ile her kart aynı yüksekliği alır
   return (
-    <div className={`flex-1 flex items-center gap-4 rounded-xl px-5 transition-all duration-500 min-h-0 ${kart}`}>
+    <div className={`h-16 shrink-0 flex items-center gap-4 rounded-xl px-5 transition-all duration-500 ${kart}`}>
       <div className={`rounded-full flex items-center justify-center shrink-0 ${ikonBg} ${s.ikon}`}>
-        <UserCheck className="w-5 h-5 text-white" />
+        {isGiris ? <UserCheck className="w-5 h-5 text-white" /> : <LogOut className="w-5 h-5 text-white" />}
       </div>
       <p className={`font-black flex-1 min-w-0 truncate ${s.ad} ${s.metin}`} title={kayit.ad}>
         {kayit.ad}
