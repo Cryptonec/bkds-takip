@@ -115,8 +115,11 @@ function useBildirimEkrani(sesAcik: boolean) {
   const poll = useCallback(async () => {
     if (isPollActive.current) return;
     isPollActive.current = true;
+    const controller = new AbortController();
+    const fetchTimeout = setTimeout(() => controller.abort(), 8000); // 8s — asılı kalmayı önle
     try {
-      const res = await fetch('/api/attendance');
+      const res = await fetch('/api/attendance', { signal: controller.signal });
+      clearTimeout(fetchTimeout);
       if (!res.ok) {
         hataArdisikRef.current += 1;
         if (hataArdisikRef.current >= 3) setHata(true);
@@ -228,10 +231,14 @@ function useBildirimEkrani(sesAcik: boolean) {
       setHata(false);
       setSonGuncelleme(new Date(now).toLocaleTimeString('tr-TR',
         { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-    } catch (e) {
-      console.error('[Ekran]', e);
-      hataArdisikRef.current += 1;
-      if (hataArdisikRef.current >= 3) setHata(true);
+    } catch (e: any) {
+      clearTimeout(fetchTimeout);
+      // AbortError = timeout — sessizce geç, birkaç saniyede kendi düzelir
+      if (e?.name !== 'AbortError') {
+        console.error('[Ekran]', e);
+        hataArdisikRef.current += 1;
+        if (hataArdisikRef.current >= 3) setHata(true);
+      }
     } finally {
       isPollActive.current = false;
     }

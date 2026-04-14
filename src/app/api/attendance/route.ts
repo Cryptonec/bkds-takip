@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions, getOrgId } from '@/lib/auth';
-import { getLiveAttendance, getLiveStaffAttendance, recalculateAttendance, recalculateStaffAttendance } from '@/lib/services/attendanceService';
-import { getActiveAlerts, generateAlerts } from '@/lib/services/alertService';
+import { getLiveAttendance, getLiveStaffAttendance } from '@/lib/services/attendanceService';
+import { getActiveAlerts } from '@/lib/services/alertService';
 import { getAttendanceStatusInfo } from '@/lib/services/attendanceEngine';
 import { getStaffStatusInfo } from '@/lib/services/staffAttendanceEngine';
-import { getBkdsService } from '@/lib/services/bkdsProviderService';
 import { prisma } from '@/lib/prisma';
 
-// Per-org son çekim zamanı — sadece poller çalışmıyorsa fallback olarak devreye girer
-const lastBkdsFetchMap = new Map<string, number>();
-const BKDS_FETCH_INTERVAL = 30000; // Poller ile çakışmayı önlemek için daha seyrek
+// Attendance route yalnızca DB'den okur — BKDS çekimi bkdsPoller.ts'e aittir
 
 function capitalizeDerslik(str: string): string {
   return str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -28,20 +25,6 @@ export async function GET(req: NextRequest) {
 
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
-
-  const lastFetch = lastBkdsFetchMap.get(orgId) ?? 0;
-  const shouldFetch = (now.getTime() - lastFetch) >= BKDS_FETCH_INTERVAL;
-  if (shouldFetch) {
-    // Arka planda çalıştır — yanıtı bloklama
-    lastBkdsFetchMap.set(orgId, now.getTime());
-    const service = getBkdsService(orgId);
-    service.fetchToday()
-      .then(records => service.saveAndAggregate(records, tarih))
-      .then(() => recalculateAttendance(tarih, orgId, now))
-      .then(() => recalculateStaffAttendance(tarih, orgId, now))
-      .then(() => generateAlerts(tarih, orgId))
-      .catch(err => console.error('[Attendance API] BKDS arka plan hatası:', err));
-  }
 
   const [attendances, staffAttendances, alerts, personelLog] = await Promise.all([
     getLiveAttendance(tarih, orgId),
