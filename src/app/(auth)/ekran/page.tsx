@@ -287,6 +287,25 @@ export default function EkranPage() {
     return () => document.removeEventListener('fullscreenchange', onFS);
   }, []);
 
+  // Tablet ekranının kapanmaması için Wake Lock
+  useEffect(() => {
+    let wakeLock: any = null;
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await (navigator as any).wakeLock.request('screen');
+        }
+      } catch {}
+    };
+    requestWakeLock();
+    const onVis = () => { if (document.visibilityState === 'visible') requestWakeLock(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      wakeLock?.release?.();
+    };
+  }, []);
+
   const { girisler, cikislar, sonGuncelleme, hata } = useBildirimEkrani(sesAcik);
   const girisListRef = useRef<HTMLDivElement>(null);
   const cikisListRef = useRef<HTMLDivElement>(null);

@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
     ? '__Secure-next-auth.session-token'
     : 'next-auth.session-token';
 
-  const response = NextResponse.redirect(new URL('/dashboard', requestOrigin));
+  const response = NextResponse.redirect(new URL('/ekran', requestOrigin));
   response.cookies.set(cookieName, jwtToken, {
     httpOnly: true,
     secure: isHttps,

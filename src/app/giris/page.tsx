@@ -133,6 +133,22 @@ function GirisForm() {
                 'Giriş Yap'
               )}
             </button>
+
+            <div className="relative my-2">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200" />
+              </div>
+              <div className="relative flex justify-center text-xs text-gray-400 bg-white px-2">
+                veya
+              </div>
+            </div>
+
+            <a
+              href="https://www.rehapp.com.tr"
+              className="w-full bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
+            >
+              Rehapp ile Giriş Yap
+            </a>
           </form>
         )}
       </div>
