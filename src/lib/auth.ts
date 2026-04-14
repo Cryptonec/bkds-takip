@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: 'jwt' },
+  trustHost: true,
   pages: {
     signIn: '/giris',
     error: '/giris',

@@ -14,14 +14,19 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const token = searchParams.get('token');
 
+  // İsteğin gerçek origin'ini belirle (proxy/IP erişimi için)
+  const proto = req.headers.get('x-forwarded-proto') ?? (BKDS_APP_URL.startsWith('https') ? 'https' : 'http');
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? new URL(BKDS_APP_URL).host;
+  const requestOrigin = `${proto}://${host}`;
+
   if (!token) {
-    return NextResponse.redirect(new URL('/giris?error=sso_callback_token_eksik', BKDS_APP_URL));
+    return NextResponse.redirect(new URL('/giris?error=sso_callback_token_eksik', requestOrigin));
   }
 
   const ssoRecord = await prisma.ssoToken.findUnique({ where: { token } });
 
   if (!ssoRecord || ssoRecord.usedAt || ssoRecord.expiresAt < new Date()) {
-    return NextResponse.redirect(new URL('/giris?error=sso_token_kullanilmis', BKDS_APP_URL));
+    return NextResponse.redirect(new URL('/giris?error=sso_token_kullanilmis', requestOrigin));
   }
 
   // Tek kullanımlık — hemen işaretle
@@ -37,7 +42,7 @@ export async function GET(req: NextRequest) {
   });
 
   if (!org) {
-    return NextResponse.redirect(new URL('/giris?error=kurum_bulunamadi', BKDS_APP_URL));
+    return NextResponse.redirect(new URL('/giris?error=kurum_bulunamadi', requestOrigin));
   }
 
   const jwtToken = await encode({
@@ -55,15 +60,16 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  // NextAuth session cookie'si
-  const cookieName = BKDS_APP_URL.startsWith('https')
+  // NextAuth session cookie'si — istek protokolüne göre belirle
+  const isHttps = requestOrigin.startsWith('https');
+  const cookieName = isHttps
     ? '__Secure-next-auth.session-token'
     : 'next-auth.session-token';
 
-  const response = NextResponse.redirect(new URL('/dashboard', BKDS_APP_URL));
+  const response = NextResponse.redirect(new URL('/dashboard', requestOrigin));
   response.cookies.set(cookieName, jwtToken, {
     httpOnly: true,
-    secure: BKDS_APP_URL.startsWith('https'),
+    secure: isHttps,
     sameSite: 'lax',
     path: '/',
     maxAge: 30 * 24 * 60 * 60,

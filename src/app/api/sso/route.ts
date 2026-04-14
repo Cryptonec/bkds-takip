@@ -67,35 +67,40 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'SSO yapılandırılmamış' }, { status: 503 });
   }
 
+  // İsteğin gerçek origin'ini belirle (proxy/IP erişimi için)
+  const proto = req.headers.get('x-forwarded-proto') ?? (BKDS_APP_URL.startsWith('https') ? 'https' : 'http');
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? new URL(BKDS_APP_URL).host;
+  const requestOrigin = `${proto}://${host}`;
+
   const { searchParams } = new URL(req.url);
   const token = searchParams.get('token');
 
   if (!token) {
-    return NextResponse.redirect(new URL('/giris?error=sso_token_eksik', BKDS_APP_URL));
+    return NextResponse.redirect(new URL('/giris?error=sso_token_eksik', requestOrigin));
   }
 
   const payload = verifyHs256Jwt(token, SSO_SECRET);
   if (!payload) {
-    return NextResponse.redirect(new URL('/giris?error=sso_gecersiz', BKDS_APP_URL));
+    return NextResponse.redirect(new URL('/giris?error=sso_gecersiz', requestOrigin));
   }
 
   const { email, name, role, org_slug } = payload;
 
   if (!email || !org_slug) {
-    return NextResponse.redirect(new URL('/giris?error=sso_eksik_alan', BKDS_APP_URL));
+    return NextResponse.redirect(new URL('/giris?error=sso_eksik_alan', requestOrigin));
   }
 
   // Kurumu bul
   const org = await prisma.organization.findUnique({ where: { slug: org_slug } });
   if (!org || !org.active) {
-    return NextResponse.redirect(new URL('/giris?error=kurum_bulunamadi', BKDS_APP_URL));
+    return NextResponse.redirect(new URL('/giris?error=kurum_bulunamadi', requestOrigin));
   }
 
   // Abonelik kontrolü
   const sub = await prisma.subscription.findUnique({ where: { organizationId: org.id } });
   const subOk = !sub || ['aktif', 'deneme'].includes(sub.status);
   if (!sub || !subOk) {
-    return NextResponse.redirect(new URL('/giris?error=abonelik_gecersiz', BKDS_APP_URL));
+    return NextResponse.redirect(new URL('/giris?error=abonelik_gecersiz', requestOrigin));
   }
 
   // Kullanıcıyı bul veya oluştur (SSO ile giriş)
@@ -116,7 +121,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } else if (!user.active) {
-    return NextResponse.redirect(new URL('/giris?error=kullanici_pasif', BKDS_APP_URL));
+    return NextResponse.redirect(new URL('/giris?error=kullanici_pasif', requestOrigin));
   }
 
   // Tek kullanımlık SSO token'ı DB'ye kaydet
@@ -133,7 +138,7 @@ export async function GET(req: NextRequest) {
   });
 
   // NextAuth oturum başlatmak için /api/sso/callback'e yönlendir
-  const callbackUrl = new URL('/api/sso/callback', BKDS_APP_URL);
+  const callbackUrl = new URL('/api/sso/callback', requestOrigin);
   callbackUrl.searchParams.set('token', token);
   return NextResponse.redirect(callbackUrl);
 }
