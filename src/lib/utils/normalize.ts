@@ -25,11 +25,13 @@ export function normalizeDerslik(derslik: string): {
   bkdsRequired: boolean;
 } {
   const normalized = derslik
+    .replace(/İ/g, 'i')   // U+0130 → 'i' (toLowerCase bu harfi 'i̇' = i+U+0307 yapar)
     .toLowerCase()
     .trim()
     .replace(/ç/g, 'c')
     .replace(/ğ/g, 'g')
     .replace(/ı/g, 'i')
+    .replace(/\u0307/g, '') // toLowerCase'den kalan birleşik nokta üstü temizle
     .replace(/ö/g, 'o')
     .replace(/ş/g, 's')
     .replace(/ü/g, 'u');

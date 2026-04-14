@@ -442,7 +442,7 @@ export default function ProgramPage() {
         {showLegend && (
           <div className="bg-white border-b border-gray-100 px-6 py-2 flex items-center gap-3 flex-wrap shrink-0">
             <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide shrink-0">Renk Açıklaması:</span>
-            {LEGEND.map(({ color, label, textCls }) => (
+            {LEGEND.map(({ color, label }) => (
               <span key={label} className="flex items-center gap-1.5 shrink-0">
                 <span className={cn('w-3 h-3 rounded-sm shrink-0', color)} />
                 <span className="text-xs text-gray-600">{label}</span>

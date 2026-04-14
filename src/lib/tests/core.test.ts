@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeName, normalizeDerslik } from '../lib/utils/normalize';
-import { calculateAttendanceStatus } from '../lib/services/attendanceEngine';
-import { calculateStaffStatus } from '../lib/services/staffAttendanceEngine';
+import { normalizeName, normalizeDerslik } from '../utils/normalize';
+import { calculateAttendanceStatus } from '../services/attendanceEngine';
+import { calculateStaffStatus } from '../services/staffAttendanceEngine';
 
 // ─── Normalize tests ───────────────────────────────────────────────────────
 
@@ -116,13 +116,13 @@ describe('calculateAttendanceStatus - giriş var', () => {
     bkdsRequired: true,
   };
 
-  it('Zamanında giriş → giris_tamam', () => {
+  it('Zamanında giriş (ders saatinde) → derste', () => {
     const s = calculateAttendanceStatus({
       lesson,
-      bkdsGiris: new Date('2024-01-15T09:02:00'),
+      bkdsGiris: new Date('2024-01-15T09:00:00'),
       now: new Date('2024-01-15T09:30:00'),
     });
-    expect(s).toBe('giris_tamam');
+    expect(s).toBe('derste');
   });
 
   it('Geç giriş → gec_geldi', () => {
