@@ -3,14 +3,13 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import {
-  LayoutDashboard, Monitor, Users, UserCog,
+  LayoutDashboard, Users, UserCog,
   Upload, FileBarChart, Settings, LogOut, Activity, Tv2, CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { href: '/dashboard',  label: 'Dashboard',      icon: LayoutDashboard },
-  { href: '/canli',      label: 'Canlı Takip',    icon: Monitor },
   { href: '/program',    label: 'Program',         icon: CalendarDays },
   { href: '/ogrenciler', label: 'Öğrenciler',      icon: Users },
   { href: '/personel',   label: 'Personel',        icon: UserCog },

@@ -1,7 +1,14 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, ChevronLeft, ChevronRight, X, Loader2, CalendarDays, GripVertical, Home, Plus, Upload } from 'lucide-react';
+import {
+  Search, ChevronLeft, ChevronRight, X, Loader2, CalendarDays,
+  GripVertical, Home, Plus, Upload,
+  CheckCircle2, XCircle, PlayCircle, TimerOff,
+  Clock, Timer, MinusCircle, LogIn, LogOut,
+} from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
+import { useLiveAttendance } from '@/lib/hooks/useLiveAttendance';
+import { BildirimPanel } from '@/components/canli/BildirimPanel';
 
 interface Student { id: string; adSoyad: string; }
 interface Attendance {
@@ -57,71 +64,100 @@ function isEvdeDestek(lesson: Lesson) {
   return !lesson.bkdsRequired || lesson.derslik.toLowerCase().includes('evde destek');
 }
 
-/** Devam durumuna göre kart rengi */
-function getLessonColors(lesson: Lesson, evde: boolean) {
+/**
+ * Renk körlüğü dostu durum bilgisi.
+ * Her durum için kart rengi, ikon ve etiket döner.
+ * Kırmızı-yeşil karışıklığını önlemek için tamamlandi → mavi (yeşil değil).
+ */
+function getStatusInfo(lesson: Lesson, evde: boolean) {
   const status = lesson.attendance?.status;
   const hasGiris = !!lesson.attendance?.gercekGiris;
 
-  // Evde destek = BKDS muaf → gri
   if (evde || status === 'bkds_muaf') return {
     card: 'bg-gray-400 hover:bg-gray-500 text-white',
     time: 'text-gray-200',
-    btn: 'text-gray-300 hover:text-white',
+    btn:  'text-gray-300 hover:text-white',
+    icon: <MinusCircle className="w-3.5 h-3.5 shrink-0" />,
+    label: 'BKDS Muaf',
   };
 
-  // Tamamlandı: nizami giriş + çıkış
   if (status === 'tamamlandi') return {
-    card: 'bg-green-600 hover:bg-green-700 text-white',
-    time: 'text-green-200',
-    btn: 'text-green-300 hover:text-white',
+    card: 'bg-blue-600 hover:bg-blue-700 text-white',
+    time: 'text-blue-200',
+    btn:  'text-blue-300 hover:text-white',
+    icon: <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />,
+    label: 'Tamamlandı',
   };
-  // Erken çıkış
+
   if (status === 'erken_cikis') return {
-    card: 'bg-orange-500 hover:bg-orange-600 text-white',
-    time: 'text-orange-100',
-    btn: 'text-orange-200 hover:text-white',
+    card: 'bg-violet-600 hover:bg-violet-700 text-white',
+    time: 'text-violet-200',
+    btn:  'text-violet-300 hover:text-white',
+    icon: <LogOut className="w-3.5 h-3.5 shrink-0" />,
+    label: 'Erken Çıkış',
   };
-  // Çıkış kaydı eksik (girdi ama çıkış yok, ders bitti)
+
   if (status === 'cikis_eksik') return {
     card: 'bg-purple-600 hover:bg-purple-700 text-white',
     time: 'text-purple-200',
-    btn: 'text-purple-300 hover:text-white',
+    btn:  'text-purple-300 hover:text-white',
+    icon: <TimerOff className="w-3.5 h-3.5 shrink-0" />,
+    label: 'Çıkış Eksik',
   };
-  // Derste / geç geldi (giriş var, ders devam ediyor)
-  if (hasGiris || status === 'derste' || status === 'giris_tamam' || status === 'gec_geldi') return {
-    card: 'bg-teal-600 hover:bg-teal-700 text-white',
-    time: 'text-teal-200',
-    btn: 'text-teal-300 hover:text-white',
+
+  if (status === 'gec_geldi') return {
+    card: 'bg-orange-500 hover:bg-orange-600 text-white',
+    time: 'text-orange-100',
+    btn:  'text-orange-200 hover:text-white',
+    icon: <Clock className="w-3.5 h-3.5 shrink-0" />,
+    label: 'Geç Geldi',
   };
-  // Gelmedi / kritik
+
+  if (hasGiris || status === 'derste' || status === 'giris_tamam') return {
+    card: 'bg-sky-600 hover:bg-sky-700 text-white',
+    time: 'text-sky-200',
+    btn:  'text-sky-300 hover:text-white',
+    icon: <PlayCircle className="w-3.5 h-3.5 shrink-0" />,
+    label: 'Derste',
+  };
+
   if (status === 'kritik' || status === 'giris_eksik') return {
     card: 'bg-red-600 hover:bg-red-700 text-white',
     time: 'text-red-200',
-    btn: 'text-red-300 hover:text-white',
+    btn:  'text-red-300 hover:text-white',
+    icon: <XCircle className="w-3.5 h-3.5 shrink-0" />,
+    label: status === 'kritik' ? 'Kritik!' : 'Giriş Eksik',
   };
-  // Gecikiyor (az gecikmiş, henüz kritik değil)
+
   if (status === 'gecikiyor') return {
-    card: 'bg-yellow-400 hover:bg-yellow-500 text-yellow-900',
-    time: 'text-yellow-700',
-    btn: 'text-yellow-600 hover:text-yellow-900',
+    card: 'bg-amber-400 hover:bg-amber-500 text-amber-900',
+    time: 'text-amber-700',
+    btn:  'text-amber-600 hover:text-amber-900',
+    icon: <Timer className="w-3.5 h-3.5 shrink-0" />,
+    label: 'Gecikiyor',
   };
-  // Varsayılan: planlandı / bekliyor
+
+  // Varsayılan: planlandı / bekleniyor
   return {
-    card: 'bg-blue-600 hover:bg-blue-700 text-white',
-    time: 'text-blue-200',
-    btn: 'text-blue-300 hover:text-white',
+    card: 'bg-slate-500 hover:bg-slate-600 text-white',
+    time: 'text-slate-300',
+    btn:  'text-slate-400 hover:text-white',
+    icon: <CalendarDays className="w-3.5 h-3.5 shrink-0" />,
+    label: 'Planlandı',
   };
 }
 
+// Renk körlüğü dostu legend — her rengin yanında ikon var
 const LEGEND = [
-  { color: 'bg-blue-600',   label: 'Planlandı' },
-  { color: 'bg-yellow-400', label: 'Gecikiyor' },
-  { color: 'bg-red-600',    label: 'Gelmedi' },
-  { color: 'bg-teal-600',   label: 'Derste' },
-  { color: 'bg-green-600',  label: 'Tamamlandı' },
-  { color: 'bg-orange-500', label: 'Erken çıkış' },
-  { color: 'bg-purple-600', label: 'Çıkış eksik' },
-  { color: 'bg-gray-400',   label: 'Evde destek / BKDS muaf' },
+  { color: 'bg-slate-500',  Icon: CalendarDays,  label: 'Planlandı' },
+  { color: 'bg-amber-400',  Icon: Timer,         label: 'Gecikiyor' },
+  { color: 'bg-red-600',    Icon: XCircle,       label: 'Gelmedi / Kritik' },
+  { color: 'bg-sky-600',    Icon: PlayCircle,    label: 'Derste' },
+  { color: 'bg-orange-500', Icon: Clock,         label: 'Geç Geldi' },
+  { color: 'bg-blue-600',   Icon: CheckCircle2,  label: 'Tamamlandı' },
+  { color: 'bg-violet-600', Icon: LogOut,        label: 'Erken Çıkış' },
+  { color: 'bg-purple-600', Icon: TimerOff,      label: 'Çıkış Eksik' },
+  { color: 'bg-gray-400',   Icon: MinusCircle,   label: 'BKDS Muaf' },
 ];
 
 /** G ✓ / Ç ✓ giriş-çıkış rozeti */
@@ -165,6 +201,14 @@ export default function ProgramPage() {
   const dragStudentRef = useRef<Student | null>(null);
 
   const weekDates = getWeekDates(weekRef);
+  const isToday = selectedDay === todayStr();
+
+  // Canlı bildirimler — her zaman bugünün verisi için
+  const {
+    yeniBildirimler, dismissBildirim,
+    yeniGirisler, yeniCikislar,
+    yeniPersonelGiris, yeniPersonelCikis,
+  } = useLiveAttendance(undefined, 5000);
 
   const loadStudents = useCallback(async () => {
     try {
@@ -233,11 +277,12 @@ export default function ProgramPage() {
 
   useEffect(() => { loadLessons(); }, [loadLessons]);
 
+  // Bugün seçiliyse her 30 saniyede bir yenile
   useEffect(() => {
-    if (selectedDay !== todayStr()) return;
+    if (!isToday) return;
     const id = setInterval(loadLessons, 30_000);
     return () => clearInterval(id);
-  }, [selectedDay, loadLessons]);
+  }, [isToday, loadLessons]);
 
   const filteredStudents = students.filter(s =>
     !studentSearch || s.adSoyad.toLowerCase().includes(studentSearch.toLowerCase())
@@ -276,10 +321,21 @@ export default function ProgramPage() {
   }
   const evdeCount = lessons.filter(isEvdeDestek).length;
 
+  // Uyarı sayıları (bugün seçiliyse)
+  const alertGelmedi = isToday
+    ? visibleLessons.filter(l => ['kritik', 'giris_eksik'].includes(l.attendance?.status ?? '')).length
+    : 0;
+  const alertGecikiyor = isToday
+    ? visibleLessons.filter(l => l.attendance?.status === 'gecikiyor').length
+    : 0;
+  const alertCikisEksik = isToday
+    ? visibleLessons.filter(l => ['cikis_eksik', 'erken_cikis'].includes(l.attendance?.status ?? '')).length
+    : 0;
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
 
-      {/* Left: Student list */}
+      {/* Sol: Öğrenci listesi */}
       <div className="w-60 shrink-0 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-4 pt-5 pb-3 border-b border-gray-100">
           <div className="flex items-center justify-between mb-3">
@@ -300,7 +356,7 @@ export default function ProgramPage() {
             </div>
           </div>
           {importResult && (
-            <p className="text-xs text-green-700 bg-green-50 rounded-lg px-2 py-1 mb-2">
+            <p className="text-xs text-blue-700 bg-blue-50 rounded-lg px-2 py-1 mb-2">
               ✓ {importResult.created} yeni, {importResult.updated} güncellendi
             </p>
           )}
@@ -347,111 +403,135 @@ export default function ProgramPage() {
         </div>
       </div>
 
-      {/* Right: Schedule */}
+      {/* Sağ: Program */}
       <div className="flex-1 flex flex-col overflow-hidden">
 
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-3 shrink-0 shadow-sm">
-          <CalendarDays className="w-5 h-5 text-blue-600 shrink-0" />
-          <h1 className="text-lg font-bold text-gray-900">Program</h1>
-          <div className="h-5 w-px bg-gray-200" />
+        <div className="bg-white border-b border-gray-200 px-6 py-3 flex flex-col gap-0 shrink-0 shadow-sm">
+          <div className="flex items-center gap-3">
+            <CalendarDays className="w-5 h-5 text-blue-600 shrink-0" />
+            <h1 className="text-lg font-bold text-gray-900">Program</h1>
+            <div className="h-5 w-px bg-gray-200" />
 
-          <button onClick={() => setWeekRef(w => addWeeks(w, -1))}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 shrink-0">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
+            <button onClick={() => setWeekRef(w => addWeeks(w, -1))}
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 shrink-0">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
 
-          <div className="flex items-center gap-1 overflow-x-auto">
-            {weekDates.map((date, i) => {
-              const isToday = date === todayStr();
-              const isSelected = date === selectedDay;
-              return (
-                <button
-                  key={date}
-                  onClick={() => { setSelectedDay(date); setWeekRef(date); }}
-                  className={cn(
-                    'flex flex-col items-center px-3 py-1.5 rounded-lg text-xs font-medium shrink-0 transition-colors',
-                    isSelected ? 'bg-blue-600 text-white'
-                      : isToday ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'
-                      : 'text-gray-500 hover:bg-gray-100'
-                  )}
-                >
-                  <span>{DAY_LABELS[i]}</span>
-                  <span className={cn('mt-0.5', isSelected ? 'text-blue-200' : 'text-gray-400')}>{fmtShort(date)}</span>
-                </button>
-              );
-            })}
-          </div>
+            <div className="flex items-center gap-1 overflow-x-auto">
+              {weekDates.map((date, i) => {
+                const isTodayDate = date === todayStr();
+                const isSelected = date === selectedDay;
+                return (
+                  <button
+                    key={date}
+                    onClick={() => { setSelectedDay(date); setWeekRef(date); }}
+                    className={cn(
+                      'flex flex-col items-center px-3 py-1.5 rounded-lg text-xs font-medium shrink-0 transition-colors',
+                      isSelected ? 'bg-blue-600 text-white'
+                        : isTodayDate ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'
+                        : 'text-gray-500 hover:bg-gray-100'
+                    )}
+                  >
+                    <span>{DAY_LABELS[i]}</span>
+                    <span className={cn('mt-0.5', isSelected ? 'text-blue-200' : 'text-gray-400')}>{fmtShort(date)}</span>
+                  </button>
+                );
+              })}
+            </div>
 
-          <button onClick={() => setWeekRef(w => addWeeks(w, 1))}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 shrink-0">
-            <ChevronRight className="w-4 h-4" />
-          </button>
+            <button onClick={() => setWeekRef(w => addWeeks(w, 1))}
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 shrink-0">
+              <ChevronRight className="w-4 h-4" />
+            </button>
 
-          {!weekDates.includes(todayStr()) && (
-            <button onClick={() => { setWeekRef(todayStr()); setSelectedDay(todayStr()); }}
-              className="text-xs text-blue-600 hover:underline font-medium shrink-0">Bugün</button>
-          )}
+            {!weekDates.includes(todayStr()) && (
+              <button onClick={() => { setWeekRef(todayStr()); setSelectedDay(todayStr()); }}
+                className="text-xs text-blue-600 hover:underline font-medium shrink-0">Bugün</button>
+            )}
 
-          <div className="flex-1" />
+            <div className="flex-1" />
 
-          {/* Evde destek toggle */}
-          {evdeCount > 0 && (
+            {/* Canlı uyarı badge'leri (sadece bugün) */}
+            {alertGelmedi > 0 && (
+              <span className="flex items-center gap-1 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full shrink-0">
+                <XCircle className="w-3.5 h-3.5" />
+                {alertGelmedi} gelmedi
+              </span>
+            )}
+            {alertGecikiyor > 0 && (
+              <span className="flex items-center gap-1 bg-amber-400 text-amber-900 text-xs font-bold px-2.5 py-1 rounded-full shrink-0">
+                <Timer className="w-3.5 h-3.5" />
+                {alertGecikiyor} gecikiyor
+              </span>
+            )}
+            {alertCikisEksik > 0 && (
+              <span className="flex items-center gap-1 bg-purple-600 text-white text-xs font-bold px-2.5 py-1 rounded-full shrink-0">
+                <TimerOff className="w-3.5 h-3.5" />
+                {alertCikisEksik} çıkış bekliyor
+              </span>
+            )}
+
+            {/* Evde destek toggle */}
+            {evdeCount > 0 && (
+              <button
+                onClick={() => setShowEvde(v => !v)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors shrink-0',
+                  showEvde
+                    ? 'bg-gray-100 border-gray-300 text-gray-600 hover:bg-gray-200'
+                    : 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100'
+                )}
+              >
+                <Home className="w-3.5 h-3.5" />
+                Evde {showEvde ? 'Gizle' : 'Göster'}
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-gray-200 text-gray-600">
+                  {evdeCount}
+                </span>
+              </button>
+            )}
+
+            {/* Legend toggle */}
             <button
-              onClick={() => setShowEvde(v => !v)}
+              onClick={() => setShowLegend(v => !v)}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors shrink-0',
-                showEvde
-                  ? 'bg-gray-100 border-gray-300 text-gray-600 hover:bg-gray-200'
-                  : 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100'
+                showLegend
+                  ? 'bg-gray-100 border-gray-300 text-gray-700'
+                  : 'border-gray-200 text-gray-400 hover:bg-gray-50'
               )}
             >
-              <Home className="w-3.5 h-3.5" />
-              Evde Destek {showEvde ? 'Gizle' : 'Göster'}
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-gray-200 text-gray-600">
-                {evdeCount}
+              <span className="flex gap-0.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" />
+                <span className="w-2.5 h-2.5 rounded-full bg-sky-500 inline-block" />
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />
               </span>
+              Renkler
             </button>
-          )}
 
-          {/* Renk açıklaması toggle */}
-          <button
-            onClick={() => setShowLegend(v => !v)}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors shrink-0',
-              showLegend
-                ? 'bg-gray-100 border-gray-300 text-gray-700'
-                : 'border-gray-200 text-gray-400 hover:bg-gray-50'
-            )}
-          >
-            <span className="flex gap-0.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" />
-              <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />
-              <span className="w-2.5 h-2.5 rounded-full bg-teal-500 inline-block" />
-            </span>
-            Renkler
-          </button>
-
-          {loading
-            ? <Loader2 className="w-4 h-4 animate-spin text-gray-400 shrink-0" />
-            : <span className="text-xs text-gray-400 shrink-0">{visibleLessons.length} ders</span>
-          }
+            {loading
+              ? <Loader2 className="w-4 h-4 animate-spin text-gray-400 shrink-0" />
+              : <span className="text-xs text-gray-400 shrink-0">{visibleLessons.length} ders</span>
+            }
+          </div>
         </div>
 
-        {/* Renk açıklamaları */}
+        {/* Renk açıklamaları — ikon + renk + etiket */}
         {showLegend && (
-          <div className="bg-white border-b border-gray-100 px-6 py-2 flex items-center gap-3 flex-wrap shrink-0">
-            <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide shrink-0">Renk Açıklaması:</span>
-            {LEGEND.map(({ color, label }) => (
+          <div className="bg-white border-b border-gray-100 px-6 py-2.5 flex items-center gap-4 flex-wrap shrink-0">
+            <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide shrink-0">Açıklama:</span>
+            {LEGEND.map(({ color, Icon, label }) => (
               <span key={label} className="flex items-center gap-1.5 shrink-0">
-                <span className={cn('w-3 h-3 rounded-sm shrink-0', color)} />
+                <span className={cn('w-5 h-5 rounded flex items-center justify-center text-white', color)}>
+                  <Icon className="w-3 h-3" />
+                </span>
                 <span className="text-xs text-gray-600">{label}</span>
               </span>
             ))}
           </div>
         )}
 
-        {/* Time grid */}
+        {/* Zaman tablosu */}
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-4xl mx-auto px-6 py-4 space-y-1">
             {TIME_SLOTS.map(slot => {
@@ -478,12 +558,12 @@ export default function ProgramPage() {
                       : 'border-dashed border-gray-200 hover:border-gray-300 bg-transparent'
                   )}
                 >
-                  {/* Time label */}
+                  {/* Saat etiketi */}
                   <div className="w-12 shrink-0 flex items-start pt-1">
                     <span className="text-xs font-mono text-gray-400 font-semibold">{slot}</span>
                   </div>
 
-                  {/* Lessons + drop hint */}
+                  {/* Dersler + bırakma ipucu */}
                   <div className="flex-1 flex flex-wrap gap-2 items-start min-w-0">
                     {isDragOver && (
                       <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-dashed border-blue-400 bg-blue-50 text-blue-500 text-xs font-medium">
@@ -498,21 +578,30 @@ export default function ProgramPage() {
                     )}
                     {slotLessons.map(l => {
                       const evde = isEvdeDestek(l);
-                      const colors = getLessonColors(l, evde);
+                      const si = getStatusInfo(l, evde);
                       return (
                         <div
                           key={l.id}
                           className={cn(
                             'flex items-start gap-2 rounded-lg px-3 py-2 text-xs shadow-sm group transition-colors',
-                            colors.card
+                            si.card
                           )}
                         >
                           <div className="min-w-0">
-                            <div className="flex items-center gap-1">
-                              {evde && <Home className="w-3 h-3 shrink-0 opacity-80" />}
-                              <p className="font-semibold leading-tight truncate max-w-[140px]">{l.student.adSoyad}</p>
+                            {/* İsim + ikon */}
+                            <div className="flex items-center gap-1 mb-0.5">
+                              {evde
+                                ? <Home className="w-3 h-3 shrink-0 opacity-80" />
+                                : si.icon
+                              }
+                              <p className="font-semibold leading-tight truncate max-w-[130px]">{l.student.adSoyad}</p>
                             </div>
-                            <p className={cn('leading-tight', colors.time)}>
+                            {/* Durum etiketi */}
+                            <p className={cn('text-[10px] font-medium opacity-80 leading-tight', si.time)}>
+                              {si.label}
+                            </p>
+                            {/* Saat */}
+                            <p className={cn('leading-tight mt-0.5', si.time)}>
                               {formatTime(l.baslangic)}–{formatTime(l.bitis)}
                             </p>
                             <AttBadge att={l.attendance} />
@@ -525,13 +614,13 @@ export default function ProgramPage() {
                               >Sil</button>
                               <button
                                 onClick={() => setSilConfirm(null)}
-                                className={cn('text-xs px-1', colors.btn)}
+                                className={cn('text-xs px-1', si.btn)}
                               >İptal</button>
                             </div>
                           ) : (
                             <button
                               onClick={() => setSilConfirm(l.id)}
-                              className={cn('mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity', colors.btn)}
+                              className={cn('mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity', si.btn)}
                             >
                               <X className="w-3.5 h-3.5" />
                             </button>
@@ -546,6 +635,41 @@ export default function ProgramPage() {
           </div>
         </div>
       </div>
+
+      {/* Giriş/çıkış toast bildirimleri — sol alt köşe */}
+      {(yeniGirisler.length > 0 || yeniCikislar.length > 0 || yeniPersonelGiris.length > 0 || yeniPersonelCikis.length > 0) && (
+        <div className="fixed bottom-4 left-4 z-40 flex flex-col gap-2 max-w-xs">
+          {yeniGirisler.map(r => (
+            <div key={r.ogrenciId} className="flex items-center gap-2 bg-sky-600 text-white rounded-xl px-4 py-2.5 shadow-lg text-sm font-medium">
+              <LogIn className="w-4 h-4 shrink-0" />
+              <span className="truncate">{r.ogrenciAdi} giriş yaptı</span>
+              {r.gercekGiris && <span className="text-sky-200 text-xs shrink-0">{formatTime(r.gercekGiris)}</span>}
+            </div>
+          ))}
+          {yeniCikislar.map(r => (
+            <div key={r.ogrenciId} className="flex items-center gap-2 bg-orange-500 text-white rounded-xl px-4 py-2.5 shadow-lg text-sm font-medium">
+              <LogOut className="w-4 h-4 shrink-0" />
+              <span className="truncate">{r.ogrenciAdi} çıkış yaptı</span>
+              {r.gercekCikis && <span className="text-orange-100 text-xs shrink-0">{formatTime(r.gercekCikis)}</span>}
+            </div>
+          ))}
+          {yeniPersonelGiris.map(p => (
+            <div key={p.id} className="flex items-center gap-2 bg-blue-700 text-white rounded-xl px-4 py-2.5 shadow-lg text-sm font-medium">
+              <LogIn className="w-4 h-4 shrink-0" />
+              <span className="truncate">{p.ad} göreve geldi</span>
+            </div>
+          ))}
+          {yeniPersonelCikis.map(p => (
+            <div key={p.id} className="flex items-center gap-2 bg-indigo-600 text-white rounded-xl px-4 py-2.5 shadow-lg text-sm font-medium">
+              <LogOut className="w-4 h-4 shrink-0" />
+              <span className="truncate">{p.ad} görevden ayrıldı</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Uyarı bildirimleri (gelmedi / yaklaşan / erken çıkış) — sağ alt köşe */}
+      <BildirimPanel bildirimler={yeniBildirimler} onDismiss={dismissBildirim} />
     </div>
   );
 }
