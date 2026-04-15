@@ -264,11 +264,17 @@ function useBildirimEkrani(sesAcik: boolean) {
       es.onmessage = (evt) => {
         try {
           const data = JSON.parse(evt.data);
+          if (data.type === 'ping') {
+            // Bağlantı sağlıklı — hata göstergesini sıfırla
+            sonBasariRef.current = Date.now();
+            setHata(false);
+            return;
+          }
           if (data.type === 'ekranData') {
             processData(data);
           }
         } catch {
-          // 'connected' gibi parse edilemeyen mesajlar — yoksay
+          // parse edilemeyen mesajlar — yoksay
         }
       };
 
@@ -293,9 +299,10 @@ function useBildirimEkrani(sesAcik: boolean) {
       } catch {}
     }, 20000);
 
-    // ── Hata kontrol: 20s boyunca veri gelmemişse uyar ───────────────────
+    // ── Hata kontrol: 35s boyunca hiç mesaj gelmemişse uyar ─────────────
+    // (heartbeat 10s'de bir gelir, 3 heartbeat kaçırırsa gerçek bağlantı kopması)
     const hataKontrol = setInterval(() => {
-      if (sonBasariRef.current > 0 && Date.now() - sonBasariRef.current > 20000) {
+      if (sonBasariRef.current > 0 && Date.now() - sonBasariRef.current > 35000) {
         setHata(true);
       }
     }, 5000);

@@ -40,10 +40,10 @@ export async function GET(req: NextRequest) {
       };
       bkdsEvents.on('update', onUpdate);
 
-      // Bağlantıyı canlı tut (10s)
+      // Bağlantıyı canlı tut (10s) — client'ın error state'ini sıfırlar
       const heartbeat = setInterval(() => {
         if (closed) return;
-        try { controller.enqueue(encoder.encode(': heartbeat\n\n')); } catch {}
+        send(JSON.stringify({ type: 'ping', ts: Date.now() }));
       }, 10000);
 
       req.signal.addEventListener('abort', () => {
