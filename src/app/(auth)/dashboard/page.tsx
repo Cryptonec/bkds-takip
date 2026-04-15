@@ -63,16 +63,16 @@ export default function DashboardPage() {
   useEffect(() => { loadStats(); }, []);
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-4 md:p-6 max-w-6xl mx-auto">
       {/* Page header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-gray-500 text-sm mt-1">
             {stats ? formatDate(stats.tarih) : 'Bugün'}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           {bkdsMsg && (
             <span className="text-sm text-green-600 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg">
               {bkdsMsg}
@@ -90,7 +90,7 @@ export default function DashboardPage() {
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="bg-white rounded-xl border border-gray-200 p-5 h-28 animate-pulse" />
           ))}
@@ -99,9 +99,9 @@ export default function DashboardPage() {
         <>
           {/* Alert banner */}
           {stats.aktifAlert > 0 && (
-            <div className="mb-5 flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-5 py-3">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
               <div className="flex items-center gap-3">
-                <AlertTriangle className="w-5 h-5 text-red-500" />
+                <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
                 <p className="text-red-700 font-medium text-sm">
                   {stats.aktifAlert} aktif uyarı var
                 </p>
@@ -114,7 +114,7 @@ export default function DashboardPage() {
 
           {/* Öğrenci stats */}
           <h2 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3">Öğrenci Devamsızlık</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
             <StatCard title="Toplam Ders" value={stats.toplamDers} icon={BookOpen} color="blue" />
             <StatCard title="Tamamlandı" value={stats.tamamlandi} icon={CheckCircle} color="green" />
             <StatCard title="Giriş Eksik" value={stats.girisEksik} icon={AlertTriangle} color="red" subtitle="kritik dahil" />
@@ -127,7 +127,7 @@ export default function DashboardPage() {
 
           {/* Personel stats */}
           <h2 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3">Personel Durumu</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 mb-6">
             <StatCard title="Derste" value={stats.personelDerste} icon={CheckCircle} color="green" />
             <StatCard title="Gecikiyor" value={stats.personelGeciyor} icon={Clock} color="yellow" />
             <StatCard title="Gelmedi" value={stats.personelGelmedi} icon={UserX} color="red" />

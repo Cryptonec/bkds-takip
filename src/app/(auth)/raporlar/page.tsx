@@ -15,7 +15,7 @@ interface AttRow {
   baslangic: string;
   bitis: string;
   gercekGiris?: string;
-  gercekCikis?: string;
+  gercakCikis?: string;
   bkdsRequired: boolean;
 }
 
@@ -37,7 +37,6 @@ export default function RaporlarPage() {
   useEffect(() => { load(); }, [tarih]);
 
   const filtered = statusFilter === 'hepsi' ? rows : rows.filter((r) => r.status === statusFilter);
-
   const statuses = [...new Set(rows.map((r) => r.status))];
 
   function exportCSV() {
@@ -47,7 +46,7 @@ export default function RaporlarPage() {
         r.ogrenciAdi, r.ogretmenAdi, r.derslik,
         formatTime(r.baslangic), formatTime(r.bitis),
         r.gercekGiris ? formatTime(r.gercekGiris) : '-',
-        r.gercekCikis ? formatTime(r.gercekCikis) : '-',
+        r.gercakCikis ? formatTime(r.gercakCikis) : '-',
         r.statusLabel,
       ].join(',')
     ).join('\n');
@@ -60,17 +59,19 @@ export default function RaporlarPage() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 md:p-6 max-w-6xl mx-auto">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Raporlar</h1>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Raporlar</h1>
           <p className="text-gray-500 text-sm mt-1">Günlük devamsızlık raporu</p>
         </div>
         <button
           onClick={exportCSV}
           className="flex items-center gap-2 border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm px-4 py-2 rounded-lg transition-colors"
         >
-          <Download className="w-4 h-4" /> CSV İndir
+          <Download className="w-4 h-4" />
+          <span className="hidden sm:inline">CSV İndir</span>
+          <span className="sm:hidden">İndir</span>
         </button>
       </div>
 
@@ -85,7 +86,6 @@ export default function RaporlarPage() {
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium text-gray-600">Durum:</label>
           <select
@@ -99,7 +99,6 @@ export default function RaporlarPage() {
             ))}
           </select>
         </div>
-
         <div className="flex items-center gap-1.5 text-sm text-gray-500 ml-auto">
           <Search className="w-4 h-4" />
           {filtered.length} kayıt
@@ -119,38 +118,38 @@ export default function RaporlarPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Öğrenci</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Öğretmen</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Derslik</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Saat</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">BKDS Giriş</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">BKDS Çıkış</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Durum</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Öğrenci</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap hidden md:table-cell">Öğretmen</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap hidden sm:table-cell">Derslik</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Saat</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap hidden lg:table-cell">BKDS Giriş</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap hidden lg:table-cell">BKDS Çıkış</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Durum</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map((row) => (
                   <tr key={row.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-gray-900">{row.ogrenciAdi}</td>
-                    <td className="px-4 py-3 text-gray-600">{row.ogretmenAdi}</td>
-                    <td className="px-4 py-3 text-xs">
-                      <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700">{row.derslik}</span>
+                    <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{row.ogrenciAdi}</td>
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap hidden md:table-cell">{row.ogretmenAdi}</td>
+                    <td className="px-4 py-3 text-xs hidden sm:table-cell">
+                      <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700 whitespace-nowrap">{row.derslik}</span>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-500 tabular-nums">
+                    <td className="px-4 py-3 text-xs text-gray-500 tabular-nums whitespace-nowrap">
                       {formatTime(row.baslangic)}–{formatTime(row.bitis)}
                     </td>
-                    <td className="px-4 py-3 text-xs tabular-nums">
+                    <td className="px-4 py-3 text-xs tabular-nums hidden lg:table-cell">
                       {row.gercekGiris ? (
                         <span className="text-green-600 font-medium">{formatTime(row.gercekGiris)}</span>
                       ) : <span className="text-gray-300">—</span>}
                     </td>
-                    <td className="px-4 py-3 text-xs tabular-nums">
-                      {row.gercekCikis ? (
-                        <span className="text-green-600 font-medium">{formatTime(row.gercekCikis)}</span>
+                    <td className="px-4 py-3 text-xs tabular-nums hidden lg:table-cell">
+                      {row.gercakCikis ? (
+                        <span className="text-green-600 font-medium">{formatTime(row.gercakCikis)}</span>
                       ) : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border ${row.statusBg} ${row.statusColor}`}>
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border whitespace-nowrap ${row.statusBg} ${row.statusColor}`}>
                         {row.statusLabel}
                       </span>
                     </td>

@@ -22,13 +22,13 @@ function SaatSayaci({ lastUpdated }: { lastUpdated: Date | null }) {
   }, []);
 
   return (
-    <div className="flex items-center gap-4">
-      <div className="bg-slate-800 border border-slate-600 px-5 py-2.5 rounded-xl">
-        <p className="text-2xl font-bold tabular-nums text-white tracking-tight leading-none">{saat}</p>
-        <p className="text-xs text-slate-400 mt-0.5">{tarih}</p>
+    <div className="flex items-center gap-3">
+      <div className="bg-slate-800 border border-slate-600 px-3 md:px-5 py-2 md:py-2.5 rounded-xl">
+        <p className="text-lg md:text-2xl font-bold tabular-nums text-white tracking-tight leading-none">{saat}</p>
+        <p className="text-xs text-slate-400 mt-0.5 hidden sm:block">{tarih}</p>
       </div>
       {lastUpdated && (
-        <div className="text-xs">
+        <div className="text-xs hidden md:block">
           <p className="text-gray-400">Son güncelleme</p>
           <p className="font-semibold text-gray-700 tabular-nums">
             {lastUpdated.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
@@ -116,37 +116,36 @@ export default function CanliPage() {
       )}
 
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-5 shrink-0 shadow-sm">
+      <div className="bg-white border-b border-gray-200 px-3 md:px-6 py-3 flex flex-wrap items-center gap-3 shrink-0 shadow-sm">
         <SaatSayaci lastUpdated={lastUpdated} />
-        <div className="h-10 w-px bg-gray-200" />
 
-        <div className="flex items-center gap-2 flex-1 flex-wrap">
+        <div className="flex items-center gap-2 flex-1 flex-wrap min-w-0">
           {data && data.bildirimler.filter(b => b.tip === 'yaklasan').length > 0 && (
-            <div className="flex items-center gap-1.5 bg-yellow-50 border border-yellow-300 text-yellow-700 px-3 py-1.5 rounded-lg text-sm font-medium animate-pulse">
-              <Clock className="w-4 h-4" />
-              {data.bildirimler.filter(b => b.tip === 'yaklasan').length} ders yaklaşıyor
+            <div className="flex items-center gap-1.5 bg-yellow-50 border border-yellow-300 text-yellow-700 px-2.5 py-1 rounded-lg text-xs font-medium animate-pulse">
+              <Clock className="w-3.5 h-3.5 shrink-0" />
+              {data.bildirimler.filter(b => b.tip === 'yaklasan').length} yaklaşıyor
             </div>
           )}
           {data && data.bildirimler.filter(b => b.tip === 'gelmedi').length > 0 && (
-            <div className="flex items-center gap-1.5 bg-red-50 border border-red-300 text-red-700 px-3 py-1.5 rounded-lg text-sm font-medium">
-              <AlertTriangle className="w-4 h-4" />
-              {data.bildirimler.filter(b => b.tip === 'gelmedi').length} öğrenci gelmedi
+            <div className="flex items-center gap-1.5 bg-red-50 border border-red-300 text-red-700 px-2.5 py-1 rounded-lg text-xs font-medium">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              {data.bildirimler.filter(b => b.tip === 'gelmedi').length} gelmedi
             </div>
           )}
           {data && data.bildirimler.filter(b => b.tip === 'erken_cikis').length > 0 && (
-            <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-300 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium">
-              <LogOut className="w-4 h-4" />
+            <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-300 text-purple-700 px-2.5 py-1 rounded-lg text-xs font-medium">
+              <LogOut className="w-3.5 h-3.5 shrink-0" />
               {data.bildirimler.filter(b => b.tip === 'erken_cikis').length} erken çıkış
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <div className={cn('flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full font-medium',
             error ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50'
           )}>
             {error ? <WifiOff className="w-3.5 h-3.5" /> : <Wifi className="w-3.5 h-3.5" />}
-            {error ? 'Bağlantı Hatası' : 'Canlı · 5s'}
+            <span className="hidden sm:inline">{error ? 'Bağlantı Hatası' : 'Canlı · 5s'}</span>
           </div>
           <button onClick={refresh} disabled={loading}
             className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors disabled:opacity-40">
@@ -156,7 +155,7 @@ export default function CanliPage() {
       </div>
 
       {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 px-6 shrink-0">
+      <div className="bg-white border-b border-gray-200 px-3 md:px-6 shrink-0">
         <div className="flex">
           {[
             { key: 'ogrenci', label: 'Öğrenci Takibi', count: data?.ogrenciRows.length },
