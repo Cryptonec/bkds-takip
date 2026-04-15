@@ -74,8 +74,10 @@ export async function GET(req: NextRequest) {
 
   const hexToken  = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + TOKEN_TTL_SECONDS * 1000);
+  const email = String(claims.email ?? `sso@${orgSlug}`);
+  const name  = String(claims.name  ?? org.name);
   await prisma.ssoToken.create({
-    data: { token: hexToken, organizationId: org.id, role: String(claims.role ?? 'admin') as any, expiresAt },
+    data: { token: hexToken, organizationId: org.id, role: String(claims.role ?? 'admin') as any, expiresAt, email, name },
   });
   return NextResponse.redirect(new URL(`/giris?token=${hexToken}`, APP_URL));
 }
