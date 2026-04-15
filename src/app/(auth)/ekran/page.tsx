@@ -265,9 +265,12 @@ function useBildirimEkrani(sesAcik: boolean) {
         try {
           const data = JSON.parse(evt.data);
           if (data.type === 'ping') {
-            // Bağlantı sağlıklı — hata göstergesini sıfırla
-            sonBasariRef.current = Date.now();
+            // Bağlantı sağlıklı — hata göstergesini sıfırla ve son kontrol saatini güncelle
+            const now = Date.now();
+            sonBasariRef.current = now;
             setHata(false);
+            setSonGuncelleme(new Date(now).toLocaleTimeString('tr-TR',
+              { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
             return;
           }
           if (data.type === 'ekranData') {

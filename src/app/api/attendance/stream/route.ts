@@ -33,9 +33,13 @@ export async function GET(req: NextRequest) {
       }).catch(() => {});
 
       // BKDS poller tamamlandığında veriyi doğrudan push et
+      // ekranData null ise sadece ping gönder (veri değişmedi, ama poll yapıldı)
       const onUpdate = ({ organizationId: updatedOrg, ekranData }: any) => {
-        if (updatedOrg === organizationId && ekranData) {
+        if (updatedOrg !== organizationId) return;
+        if (ekranData) {
           send(JSON.stringify({ type: 'ekranData', ...ekranData }));
+        } else {
+          send(JSON.stringify({ type: 'ping', ts: Date.now() }));
         }
       };
       bkdsEvents.on('update', onUpdate);

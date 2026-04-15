@@ -30,7 +30,11 @@ export async function runBkdsPollForOrg(organizationId: string): Promise<void> {
     const records = await service.fetchToday();
 
     const hash = hashRecords(records);
-    if (hash === lastPollHash.get(organizationId)) return; // Değişiklik yok
+    if (hash === lastPollHash.get(organizationId)) {
+      // Veri değişmedi — yine de "son kontrol" saatini client'a bildir
+      bkdsEvents.emit('update', { organizationId, ekranData: null });
+      return;
+    }
     lastPollHash.set(organizationId, hash);
 
     const tarih = new Date();
