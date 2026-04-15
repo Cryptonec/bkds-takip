@@ -96,10 +96,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/giris?error=kurum_bulunamadi', requestOrigin));
   }
 
-  // Abonelik kontrolü
+  // Abonelik kontrolü — kayıt yoksa izin ver, varsa geçerli olmalı
   const sub = await prisma.subscription.findUnique({ where: { organizationId: org.id } });
-  const subOk = !sub || ['aktif', 'deneme'].includes(sub.status);
-  if (!sub || !subOk) {
+  if (sub && !['aktif', 'deneme'].includes(sub.status)) {
     return NextResponse.redirect(new URL('/giris?error=abonelik_gecersiz', requestOrigin));
   }
 
