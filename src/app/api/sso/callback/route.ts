@@ -1,79 +1,58 @@
 /**
- * SSO Callback — tek kullanımlık token ile NextAuth oturumu başlatır.
- * /api/sso/route.ts tarafından yönlendirilir.
+ * GET /api/sso/callback?token=<token>
+ * Kullanıcıyı SSO token ile otomatik giriş yapan sayfa.
  */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { encode } from 'next-auth/jwt';
-
-const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET ?? '';
-const BKDS_APP_URL = process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const token = searchParams.get('token');
 
-  // İsteğin gerçek origin'ini belirle (proxy/IP erişimi için)
-  const proto = req.headers.get('x-forwarded-proto') ?? (BKDS_APP_URL.startsWith('https') ? 'https' : 'http');
-  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? new URL(BKDS_APP_URL).host;
-  const requestOrigin = `${proto}://${host}`;
-
   if (!token) {
-    return NextResponse.redirect(new URL('/giris?error=sso_callback_token_eksik', requestOrigin));
+    return NextResponse.redirect(new URL('/giris?error=sso_missing_token', req.url));
   }
 
-  const ssoRecord = await prisma.ssoToken.findUnique({ where: { token } });
+  // Client-side form submit için HTML sayfası döndür
+  const html = `<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Giriş yapılıyor...</title>
+  <style>
+    body { font-family: system-ui, sans-serif; display: flex; align-items: center;
+           justify-content: center; height: 100vh; margin: 0; background: #f9fafb; }
+    .card { text-align: center; padding: 2rem; background: white; border-radius: 12px;
+            box-shadow: 0 1px 8px rgba(0,0,0,0.1); }
+    .spinner { width: 40px; height: 40px; border: 3px solid #e5e7eb;
+               border-top-color: #3b82f6; border-radius: 50%;
+               animation: spin 0.8s linear infinite; margin: 0 auto 1rem; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner"></div>
+    <p>Giriş yapılıyor, lütfen bekleyin…</p>
+  </div>
+  <form id="f" method="POST" action="/api/auth/callback/credentials" style="display:none">
+    <input name="ssoToken" value="${token.replace(/[^a-f0-9]/g, '')}" />
+    <input name="csrfToken" id="csrf" />
+    <input name="callbackUrl" value="/dashboard" />
+    <input name="json" value="true" />
+  </form>
+  <script>
+    (async () => {
+      const r = await fetch('/api/auth/csrf');
+      const { csrfToken } = await r.json();
+      document.getElementById('csrf').value = csrfToken;
+      document.getElementById('f').submit();
+    })();
+  </script>
+</body>
+</html>`;
 
-  if (!ssoRecord || ssoRecord.usedAt || ssoRecord.expiresAt < new Date()) {
-    return NextResponse.redirect(new URL('/giris?error=sso_token_kullanilmis', requestOrigin));
-  }
-
-  // Tek kullanımlık — hemen işaretle
-  await prisma.ssoToken.update({
-    where: { token },
-    data: { usedAt: new Date() },
+  return new NextResponse(html, {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
   });
-
-  // NextAuth JWT oluştur
-  const org = await prisma.organization.findUnique({
-    where: { id: ssoRecord.organizationId },
-    select: { id: true, slug: true },
-  });
-
-  if (!org) {
-    return NextResponse.redirect(new URL('/giris?error=kurum_bulunamadi', requestOrigin));
-  }
-
-  const jwtToken = await encode({
-    secret: NEXTAUTH_SECRET,
-    token: {
-      sub: ssoRecord.userId ?? undefined,
-      id: ssoRecord.userId ?? undefined,
-      email: ssoRecord.email,
-      name: ssoRecord.name,
-      role: ssoRecord.role,
-      organizationId: org.id,
-      organizationSlug: org.slug,
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60, // 30 gün
-    },
-  });
-
-  // NextAuth session cookie'si — istek protokolüne göre belirle
-  const isHttps = requestOrigin.startsWith('https');
-  const cookieName = isHttps
-    ? '__Secure-next-auth.session-token'
-    : 'next-auth.session-token';
-
-  const response = NextResponse.redirect(new URL('/ekran', requestOrigin));
-  response.cookies.set(cookieName, jwtToken, {
-    httpOnly: true,
-    secure: isHttps,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 30 * 24 * 60 * 60,
-  });
-
-  return response;
 }

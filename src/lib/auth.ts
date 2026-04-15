@@ -16,71 +16,72 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: 'E-posta', type: 'email' },
         password: { label: 'Şifre', type: 'password' },
-        organizationSlug: { label: 'Kurum', type: 'text' },
+        ssoToken: { label: 'SSO Token', type: 'text' },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
-
-        try {
-          // Önce multi-tenant modunu dene (Organization modeli mevcutsa)
-          const orgSlug = credentials.organizationSlug;
-
-          let user: any = null;
-
-          if (orgSlug) {
-            const org = await (prisma as any).organization?.findUnique({
-              where: { slug: orgSlug },
-              select: { id: true, slug: true },
-            });
-            if (org) {
-              user = await prisma.user.findFirst({
-                where: { email: credentials.email, active: true, organizationId: org.id } as any,
-                include: { organization: { select: { id: true, slug: true } } } as any,
-              });
-            }
-          } else {
-            // organizationSlug yok → ilk eşleşen aktif kullanıcıyı getir
-            user = await prisma.user.findFirst({
-              where: { email: credentials.email, active: true } as any,
-              include: { organization: { select: { id: true, slug: true } } } as any,
-            });
-          }
-
-          if (!user || !user.active) return null;
-          if (!user.password) return null;
-
-          const passwordValid = await bcrypt.compare(credentials.password, user.password);
-          if (!passwordValid) return null;
-
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            role: user.role,
-            organizationId: (user as any).organizationId ?? null,
-            organizationSlug: (user as any).organization?.slug ?? null,
-          };
-        } catch {
-          // Multi-tenant migration henüz uygulanmamış — eski tek-kiracı moduna dön
-          const user = await prisma.user.findFirst({
-            where: { email: credentials.email } as any,
+        // SSO token ile giriş
+        if (credentials?.ssoToken) {
+          const record = await prisma.ssoToken.findUnique({
+            where: { token: credentials.ssoToken },
+            include: { organization: true },
           });
 
-          if (!user || !(user as any).active) return null;
-          if (!(user as any).password) return null;
+          if (!record) return null;
+          if (record.expiresAt < new Date()) return null;
 
-          const passwordValid = await bcrypt.compare(credentials.password, (user as any).password);
-          if (!passwordValid) return null;
+          await prisma.ssoToken.update({
+            where: { id: record.id },
+            data: { usedAt: new Date() },
+          });
 
+          // Org'un admin kullanıcısını bul
+          const orgAdmin = await prisma.user.findFirst({
+            where: { organizationId: record.organizationId, role: 'admin', active: true },
+          });
+
+          if (orgAdmin) {
+            return {
+              id: orgAdmin.id,
+              email: orgAdmin.email,
+              name: orgAdmin.name,
+              role: orgAdmin.role as string,
+              organizationId: record.organizationId,
+              organizationSlug: record.organization.slug,
+            };
+          }
+
+          // Admin yoksa token'ın role'ü ile sanal oturum
           return {
-            id: (user as any).id,
-            email: (user as any).email,
-            name: (user as any).name,
-            role: (user as any).role,
-            organizationId: null,
-            organizationSlug: null,
+            id: `sso-${record.organizationId}`,
+            email: `sso@${record.organization.slug}`,
+            name: record.organization.name,
+            role: record.role as string,
+            organizationId: record.organizationId,
+            organizationSlug: record.organization.slug,
           };
         }
+
+        // Normal e-posta/şifre girişi
+        if (!credentials?.email || !credentials?.password) return null;
+
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email },
+          include: { organization: true },
+        });
+
+        if (!user || !user.active) return null;
+
+        const passwordValid = await bcrypt.compare(credentials.password, user.password);
+        if (!passwordValid) return null;
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role as string,
+          organizationId: user.organizationId ?? undefined,
+          organizationSlug: user.organization?.slug ?? undefined,
+        };
       },
     }),
   ],
@@ -111,13 +112,10 @@ export async function getOrgId(session: any): Promise<string> {
   const id = session?.user?.organizationId;
   if (id) return id as string;
 
-  // DB migrate edilmişse ilk aktif kurumu kullan (tek-kurum / migration geçiş modu)
   try {
     const org = await prisma.organization.findFirst({ where: { active: true } });
     if (org) return org.id;
-  } catch {
-    // Organization tablosu henüz yok — migration bekleniyor
-  }
+  } catch {}
 
-  throw new Error('organizationId bulunamadı — lütfen npm run db:push ve npm run db:seed çalıştırın');
+  throw new Error('organizationId bulunamadı');
 }
