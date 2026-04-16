@@ -12,6 +12,8 @@ import { prisma } from '@/lib/prisma';
 const lastBkdsFetchMap = new Map<string, number>();
 const BKDS_FETCH_INTERVAL = 5000;
 
+export const dynamic = 'force-dynamic';
+
 function capitalizeDerslik(str: string): string {
   return str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
 }
@@ -162,16 +164,19 @@ export async function GET(req: NextRequest) {
     dersVar: personelRows.some(r => r.staffId === log.staffId),
   }));
 
-  return NextResponse.json({
-    tarih: tarih.toISOString(),
-    ogrenciRows,
-    personelRows,
-    statusCounts,
-    staffStatusCounts,
-    alerts: alerts.length,
-    alertList: alerts,
-    bildirimler,
-    tumPersonelGirisler,
-    updatedAt: now.toISOString(),
-  });
+  return NextResponse.json(
+    {
+      tarih: tarih.toISOString(),
+      ogrenciRows,
+      personelRows,
+      statusCounts,
+      staffStatusCounts,
+      alerts: alerts.length,
+      alertList: alerts,
+      bildirimler,
+      tumPersonelGirisler,
+      updatedAt: now.toISOString(),
+    },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
 }

@@ -53,6 +53,7 @@ function fmt(iso: string) {
 }
 
 const HATA_ESIGI_MS = 35_000; // 35s — 3 ping kaçırılırsa gerçek kopma
+const POLL_HATA_ESIGI = 3;    // Ard arda 3 başarısız istek → kırmızı nokta
 
 function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
   // Tek kaynak: tüm giriş ve çıkışları ad→Kayit Map olarak tut
@@ -62,12 +63,14 @@ function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
   const [cikislar, setCikislar] = useState<Kayit[]>([]);
   const [sonGuncelleme, setSonGuncelleme] = useState('');
   const [hataVar, setHataVar] = useState(false);
+  const [hataMsg, setHataMsg] = useState('');
   const sesAcikRef = useRef(sesAcik);
   const maxRef = useRef(max);
   const isFirst = useRef(true);
   const prevGirisHash = useRef('');
   const prevCikisHash = useRef('');
   const lastEventRef = useRef<number>(Date.now());
+  const pollHataSayaci = useRef(0);
 
   useEffect(() => { sesAcikRef.current = sesAcik; }, [sesAcik]);
   useEffect(() => { 
@@ -98,14 +101,25 @@ function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
   // Gelen her olayı kaydet (ping veya veri) → "Son veri" saati güncelle
   const onEvent = useCallback(() => {
     lastEventRef.current = Date.now();
+    pollHataSayaci.current = 0;
     setHataVar(false);
+    setHataMsg('');
     setSonGuncelleme(new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}));
   }, []);
 
   const poll = useCallback(async () => {
     try {
-      const res = await fetch('/api/attendance');
-      if (!res.ok) return;
+      const res = await fetch('/api/attendance', { cache: 'no-store' });
+      if (!res.ok) {
+        pollHataSayaci.current += 1;
+        if (pollHataSayaci.current >= POLL_HATA_ESIGI) {
+          setHataVar(true);
+          setHataMsg(res.status === 401 ? 'Oturum süresi doldu' : `API Hatası (${res.status})`);
+        }
+        return;
+      }
+      pollHataSayaci.current = 0;
+      setHataMsg('');
       const json = await res.json();
       const ogrenciRows = json.ogrenciRows ?? [];
       const personelRows = json.personelRows ?? [];
@@ -250,7 +264,7 @@ function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis); };
   }, [poll]);
 
-  return { girisler, cikislar, sonGuncelleme, hataVar };
+  return { girisler, cikislar, sonGuncelleme, hataVar, hataMsg };
 }
 
 export default function EkranPage() {
@@ -265,7 +279,7 @@ export default function EkranPage() {
   }, []);
 
   const MAX = isFullscreen ? MAX_FULLSCREEN : MAX_NORMAL;
-  const { girisler, cikislar, sonGuncelleme, hataVar } = useBildirimEkrani(sesAcik, MAX);
+  const { girisler, cikislar, sonGuncelleme, hataVar, hataMsg } = useBildirimEkrani(sesAcik, MAX);
   const [saat, setSaat] = useState('');
   const [tarih, setTarih] = useState('');
 
@@ -384,8 +398,10 @@ export default function EkranPage() {
             {sesAcik ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
             {sesAcik ? 'Ses Açık' : 'Ses Kapalı'}
           </button>
-          <span className="text-gray-700 text-xs">{sonGuncelleme ? `${sonGuncelleme}` : 'Bağlanıyor...'}</span>
-          <span className={`w-2 h-2 rounded-full ${hataVar ? 'bg-red-500' : 'bg-green-500 animate-pulse'}`} />
+          <span className={`text-xs ${hataVar ? 'text-red-400 font-semibold' : 'text-gray-700'}`}>
+            {hataVar && hataMsg ? hataMsg : (sonGuncelleme ? `Son: ${sonGuncelleme}` : 'Bağlanıyor...')}
+          </span>
+          <span className={`w-2 h-2 rounded-full ${hataVar ? 'bg-red-500 animate-pulse' : 'bg-green-500 animate-pulse'}`} />
         </div>
       </div>
 
