@@ -26,12 +26,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { createHash, timingSafeEqual } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 const SSO_SECRET = process.env.SSO_SECRET ?? '';
 const BKDS_APP_URL = process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
 
-/** Minimal HMAC-SHA256 JWT doğrulama (jose veya jsonwebtoken gerektirmez) */
+/** HMAC-SHA256 JWT doğrulama — PyJWT HS256 ile uyumlu */
 function verifyHs256Jwt(token: string, secret: string): Record<string, any> | null {
   const parts = token.split('.');
   if (parts.length !== 3) return null;
@@ -39,8 +39,8 @@ function verifyHs256Jwt(token: string, secret: string): Record<string, any> | nu
   const [headerB64, payloadB64, sigB64] = parts;
   const data = `${headerB64}.${payloadB64}`;
 
-  const expectedSig = createHash('sha256')
-    .update(secret + data) // HMAC-SHA256 basit impl
+  const expectedSig = createHmac('sha256', secret)
+    .update(data)
     .digest('base64url');
 
   // Timing-safe karşılaştırma
