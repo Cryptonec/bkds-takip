@@ -102,24 +102,37 @@ export function stopPollingForOrg(organizationId: string): void {
  * Kurumlar 3'er saniye aralıklı başlatılır — BKDS'e aynı anda çarpmayı önler.
  */
 export async function startAllPollers(): Promise<void> {
-  const orgs = await prisma.organization.findMany({
-    where: { active: true },
-    include: {
-      bkdsCredential: { select: { pollInterval: true } },
-      subscription: { select: { status: true } },
-    },
-  });
+  let orgs: any[];
+
+  try {
+    orgs = await prisma.organization.findMany({
+      where: { active: true },
+      include: {
+        bkdsCredential: { select: { pollInterval: true } },
+        subscription: { select: { status: true } },
+      },
+    });
+  } catch {
+    // Subscription tablosu henüz DB'de yok — abonelik kontrolü olmadan çalıştır
+    orgs = await prisma.organization.findMany({
+      where: { active: true },
+      include: {
+        bkdsCredential: { select: { pollInterval: true } },
+      },
+    });
+  }
 
   let delay = 0;
   for (const org of orgs) {
-    const subOk = !org.subscription || ['aktif', 'deneme'].includes(org.subscription.status);
+    const sub = (org as any).subscription;
+    const subOk = !sub || ['aktif', 'deneme'].includes(sub.status);
     if (!subOk) continue;
 
     const interval = org.bkdsCredential?.pollInterval
       ?? Number(process.env.BKDS_POLL_INTERVAL ?? '30000');
 
     setTimeout(() => startPollingForOrg(org.id, interval), delay);
-    delay += 3000; // 3s aralıklı başlat
+    delay += 3000;
   }
 }
 

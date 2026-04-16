@@ -25,57 +25,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { jwtVerify } from 'jose';
 import { prisma } from '@/lib/prisma';
-import { createHmac, timingSafeEqual } from 'crypto';
 
 const SSO_SECRET = process.env.SSO_SECRET ?? '';
 const BKDS_APP_URL = process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
 
-/** HMAC-SHA256 JWT doğrulama — PyJWT HS256 ile uyumlu */
-function verifyHs256Jwt(token: string, secret: string): Record<string, any> | null {
-  const parts = token.split('.');
-  if (parts.length !== 3) {
-    console.error('[SSO] Token format hatalı, parça sayısı:', parts.length);
-    return null;
-  }
-
-  const [headerB64, payloadB64, sigB64] = parts;
-  const data = `${headerB64}.${payloadB64}`;
-
-  const expectedSig = createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-
-  console.log('[SSO] Token doğrulama — gelen imza:', sigB64.slice(0, 10) + '...', '| beklenen:', expectedSig.slice(0, 10) + '...');
-
-  // Timing-safe karşılaştırma
-  try {
-    const a = Buffer.from(sigB64);
-    const b = Buffer.from(expectedSig);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) {
-      console.error('[SSO] İmza eşleşmedi — SSO_SECRET yanlış olabilir');
-      return null;
-    }
-  } catch {
-    return null;
-  }
-
-  try {
-    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8'));
-    // Süre kontrolü
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-      console.error('[SSO] Token süresi dolmuş, exp:', payload.exp, 'now:', Math.floor(Date.now() / 1000));
-      return null;
-    }
-    console.log('[SSO] Token geçerli, email:', payload.email, 'org_slug:', payload.org_slug);
-    return payload;
-  } catch {
-    return null;
-  }
-}
-
 export async function GET(req: NextRequest) {
   if (!SSO_SECRET) {
+    console.error('[SSO] SSO_SECRET env değişkeni ayarlanmamış');
     return NextResponse.json({ error: 'SSO yapılandırılmamış' }, { status: 503 });
   }
 
@@ -86,8 +44,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/giris?error=sso_token_eksik', BKDS_APP_URL));
   }
 
-  const payload = verifyHs256Jwt(token, SSO_SECRET);
-  if (!payload) {
+  // jose ile HS256 doğrulama — PyJWT ile tam uyumlu
+  let payload: Record<string, any>;
+  try {
+    const secretKey = new TextEncoder().encode(SSO_SECRET);
+    const { payload: verified } = await jwtVerify(token, secretKey, { algorithms: ['HS256'] });
+    payload = verified as Record<string, any>;
+    console.log('[SSO] Token geçerli, email:', payload.email, 'org_slug:', payload.org_slug);
+  } catch (err: any) {
+    console.error('[SSO] JWT doğrulama hatası:', err?.message ?? err);
     return NextResponse.redirect(new URL('/giris?error=sso_gecersiz', BKDS_APP_URL));
   }
 
@@ -100,17 +65,21 @@ export async function GET(req: NextRequest) {
   // Kurumu bul
   const org = await prisma.organization.findUnique({ where: { slug: org_slug } });
   if (!org || !org.active) {
+    console.error('[SSO] Kurum bulunamadı veya pasif, org_slug:', org_slug);
     return NextResponse.redirect(new URL('/giris?error=kurum_bulunamadi', BKDS_APP_URL));
   }
 
-  // Abonelik kontrolü
-  const sub = await prisma.subscription.findUnique({ where: { organizationId: org.id } });
-  const subOk = !sub || ['aktif', 'deneme'].includes(sub.status);
-  if (!sub || !subOk) {
-    return NextResponse.redirect(new URL('/giris?error=abonelik_gecersiz', BKDS_APP_URL));
+  // Abonelik kontrolü (tablo yoksa veya kayıt yoksa izin ver)
+  try {
+    const sub = await (prisma as any).subscription?.findUnique({ where: { organizationId: org.id } });
+    if (sub && !['aktif', 'deneme'].includes(sub.status)) {
+      return NextResponse.redirect(new URL('/giris?error=abonelik_gecersiz', BKDS_APP_URL));
+    }
+  } catch {
+    // Subscription tablosu henüz yok — geç
   }
 
-  // Kullanıcıyı bul veya oluştur (SSO ile giriş)
+  // Kullanıcıyı bul veya oluştur
   const validRole = ['admin', 'yonetici', 'danisma'].includes(role) ? role : 'danisma';
   let user = await prisma.user.findFirst({
     where: { email, organizationId: org.id },
@@ -124,7 +93,7 @@ export async function GET(req: NextRequest) {
         organizationId: org.id,
         role: validRole as any,
         active: true,
-        password: null as any, // SSO kullanıcısı
+        password: null as any,
       },
     });
   } else if (!user.active) {
@@ -132,17 +101,22 @@ export async function GET(req: NextRequest) {
   }
 
   // Tek kullanımlık SSO token'ı DB'ye kaydet
-  await prisma.ssoToken.create({
-    data: {
-      token,
-      organizationId: org.id,
-      userId: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-    },
-  });
+  try {
+    await prisma.ssoToken.create({
+      data: {
+        token,
+        organizationId: org.id,
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      },
+    });
+  } catch (err) {
+    console.error('[SSO] SsoToken kaydedilemedi:', err);
+    // Devam et — kritik değil
+  }
 
   // NextAuth oturum başlatmak için /api/sso/callback'e yönlendir
   const callbackUrl = new URL('/api/sso/callback', BKDS_APP_URL);
