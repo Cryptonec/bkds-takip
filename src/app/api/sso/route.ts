@@ -54,6 +54,8 @@ export async function GET(req: NextRequest) {
     console.log('[SSO] Beklenen imza :', computedSig);
     console.log('[SSO] Token imzası  :', tokenSig);
     console.log('[SSO] Secret uzunluk:', SSO_SECRET.length, '| ilk 8:', SSO_SECRET.slice(0, 8));
+    console.log('[SSO] Header b64    :', parts[0]);
+    console.log('[SSO] Payload b64   :', parts[1]);
     try {
       const rawPayload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
       console.log('[SSO] Token payload :', JSON.stringify(rawPayload));
