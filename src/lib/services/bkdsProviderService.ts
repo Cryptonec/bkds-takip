@@ -192,11 +192,19 @@ export class BkdsProviderService {
       const sonCikis = cikislar.length > 0 ? new Date(Math.max(...cikislar)) : null;
       const student = allStudents.find(s => matchMaskedName(maskedName, s.adSoyad));
       if (student) {
-        await prisma.bkdsAggregate.upsert({
-          where: { studentId_tarih: { studentId: student.id, tarih: dateOnly } },
-          create: { organizationId: orgId, studentId: student.id, tarih: dateOnly, adSoyad: maskedName, ilkGiris, sonCikis },
-          update: { adSoyad: maskedName, ilkGiris, sonCikis },
+        const existing = await prisma.bkdsAggregate.findFirst({
+          where: { studentId: student.id, tarih: dateOnly },
         });
+        if (existing) {
+          await prisma.bkdsAggregate.update({
+            where: { id: existing.id },
+            data: { adSoyad: maskedName, ilkGiris, sonCikis, fetchedAt: new Date() },
+          });
+        } else {
+          await prisma.bkdsAggregate.create({
+            data: { organizationId: orgId, studentId: student.id, tarih: dateOnly, adSoyad: maskedName, ilkGiris, sonCikis },
+          });
+        }
       }
     }
 
