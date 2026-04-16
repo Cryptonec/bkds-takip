@@ -7,7 +7,43 @@ import { generateAlerts } from './alertService';
 const runningOrgs = new Set<string>();
 const orgIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
+// ──────────────────────────────────────────────
+// Global backoff — BKDS IP bazlı rate limit
+// Herhangi bir kurum 429 alırsa TÜM kurumlar durur.
+// ──────────────────────────────────────────────
+const BACKOFF_STEPS_MS = [30_000, 60_000, 120_000, 240_000, 300_000]; // max 5dk
+let globalBackoffLevel = 0;
+let globalBackoffUntil = 0;
+
+function isGlobalBackoff(): boolean {
+  return Date.now() < globalBackoffUntil;
+}
+
+function escalateBackoff(orgId: string): void {
+  const delay = BACKOFF_STEPS_MS[Math.min(globalBackoffLevel, BACKOFF_STEPS_MS.length - 1)];
+  globalBackoffUntil = Date.now() + delay;
+  globalBackoffLevel = Math.min(globalBackoffLevel + 1, BACKOFF_STEPS_MS.length - 1);
+  console.warn(`[BKDS Backoff][${orgId}] 429 — tüm kurumlar ${delay / 1000}s bekliyor (seviye ${globalBackoffLevel})`);
+}
+
+function resetBackoff(): void {
+  if (globalBackoffLevel > 0) {
+    console.log('[BKDS Backoff] Başarılı istek — backoff sıfırlandı');
+    globalBackoffLevel = 0;
+    globalBackoffUntil = 0;
+  }
+}
+
+// ──────────────────────────────────────────────
+// Tek kurum için poll
+// ──────────────────────────────────────────────
 export async function runBkdsPollForOrg(organizationId: string): Promise<void> {
+  if (isGlobalBackoff()) {
+    const kalan = Math.ceil((globalBackoffUntil - Date.now()) / 1000);
+    console.log(`[BKDS Poll][${organizationId}] Global backoff aktif, ${kalan}s kaldı — atlıyor`);
+    return;
+  }
+
   if (runningOrgs.has(organizationId)) {
     console.log(`[BKDS Poll][${organizationId}] Önceki çalışma devam ediyor, atlıyor...`);
     return;
@@ -27,15 +63,22 @@ export async function runBkdsPollForOrg(organizationId: string): Promise<void> {
     await recalculateStaffAttendance(tarih, organizationId);
     await generateAlerts(tarih, organizationId);
 
+    resetBackoff();
     console.log(`[BKDS Poll][${organizationId}] Tamamlandı: ${new Date().toISOString()}`);
-  } catch (err) {
-    console.error(`[BKDS Poll][${organizationId}] Hata:`, err);
+  } catch (err: any) {
+    // 429 → global backoff
+    const status = err?.status ?? err?.response?.status;
+    if (status === 429) {
+      escalateBackoff(organizationId);
+    } else {
+      console.error(`[BKDS Poll][${organizationId}] Hata:`, err);
+    }
   } finally {
     runningOrgs.delete(organizationId);
   }
 }
 
-export function startPollingForOrg(organizationId: string, intervalMs: number = 60000): void {
+export function startPollingForOrg(organizationId: string, intervalMs: number = 30_000): void {
   stopPollingForOrg(organizationId);
 
   console.log(`[BKDS Poll][${organizationId}] Polling başlatıldı (${intervalMs}ms aralık)`);
@@ -54,7 +97,10 @@ export function stopPollingForOrg(organizationId: string): void {
   }
 }
 
-/** Tüm aktif & aboneliği geçerli kurumlar için polling başlat */
+/**
+ * Tüm aktif & aboneliği geçerli kurumlar için polling başlat.
+ * Kurumlar 3'er saniye aralıklı başlatılır — BKDS'e aynı anda çarpmayı önler.
+ */
 export async function startAllPollers(): Promise<void> {
   const orgs = await prisma.organization.findMany({
     where: { active: true },
@@ -64,11 +110,16 @@ export async function startAllPollers(): Promise<void> {
     },
   });
 
+  let delay = 0;
   for (const org of orgs) {
     const subOk = !org.subscription || ['aktif', 'deneme'].includes(org.subscription.status);
     if (!subOk) continue;
-    const interval = org.bkdsCredential?.pollInterval ?? Number(process.env.BKDS_POLL_INTERVAL ?? '60000');
-    startPollingForOrg(org.id, interval);
+
+    const interval = org.bkdsCredential?.pollInterval
+      ?? Number(process.env.BKDS_POLL_INTERVAL ?? '30000');
+
+    setTimeout(() => startPollingForOrg(org.id, interval), delay);
+    delay += 3000; // 3s aralıklı başlat
   }
 }
 

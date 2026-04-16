@@ -52,6 +52,8 @@ function fmt(iso: string) {
   return new Date(iso).toLocaleTimeString('tr-TR', { hour:'2-digit', minute:'2-digit' });
 }
 
+const HATA_ESIGI_MS = 35_000; // 35s — 3 ping kaçırılırsa gerçek kopma
+
 function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
   // Tek kaynak: tüm giriş ve çıkışları ad→Kayit Map olarak tut
   const girisMapRef = useRef<Map<string,Kayit>>(new Map());
@@ -59,11 +61,13 @@ function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
   const [girisler, setGirisler] = useState<Kayit[]>([]);
   const [cikislar, setCikislar] = useState<Kayit[]>([]);
   const [sonGuncelleme, setSonGuncelleme] = useState('');
+  const [hataVar, setHataVar] = useState(false);
   const sesAcikRef = useRef(sesAcik);
   const maxRef = useRef(max);
   const isFirst = useRef(true);
   const prevGirisHash = useRef('');
   const prevCikisHash = useRef('');
+  const lastEventRef = useRef<number>(Date.now());
 
   useEffect(() => { sesAcikRef.current = sesAcik; }, [sesAcik]);
   useEffect(() => { 
@@ -90,6 +94,13 @@ function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
     setCikislar(sorted);
     if (ses && sesAcikRef.current) calarCikis();
   }
+
+  // Gelen her olayı kaydet (ping veya veri) → "Son veri" saati güncelle
+  const onEvent = useCallback(() => {
+    lastEventRef.current = Date.now();
+    setHataVar(false);
+    setSonGuncelleme(new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}));
+  }, []);
 
   const poll = useCallback(async () => {
     try {
@@ -190,8 +201,45 @@ function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
 
       prevGirisHash.current = girisHash;
       prevCikisHash.current = cikisHash;
-      setSonGuncelleme(new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}));
+      onEvent();
     } catch(e) { console.error('[Ekran]', e); }
+  }, [onEvent]);
+
+  // SSE bağlantısı — ping mesajlarını işle
+  useEffect(() => {
+    let es: EventSource | null = null;
+    let closed = false;
+
+    function connect() {
+      if (closed) return;
+      es = new EventSource('/api/attendance/stream');
+      es.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'ping') {
+            onEvent();
+          }
+          // Veri mesajı gelirse poll yerine kullanılabilir (ileride)
+        } catch {}
+      };
+      es.onerror = () => {
+        es?.close();
+        if (!closed) setTimeout(connect, 5000); // yeniden bağlan
+      };
+    }
+
+    connect();
+    return () => { closed = true; es?.close(); };
+  }, [onEvent]);
+
+  // Hata watchdog — 35s içinde herhangi bir olay gelmezse kırmızı göster
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (Date.now() - lastEventRef.current > HATA_ESIGI_MS) {
+        setHataVar(true);
+      }
+    }, 5000);
+    return () => clearInterval(t);
   }, []);
 
   useEffect(() => {
@@ -202,7 +250,7 @@ function useBildirimEkrani(sesAcik: boolean, max: number = 5) {
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis); };
   }, [poll]);
 
-  return { girisler, cikislar, sonGuncelleme };
+  return { girisler, cikislar, sonGuncelleme, hataVar };
 }
 
 export default function EkranPage() {
@@ -217,7 +265,7 @@ export default function EkranPage() {
   }, []);
 
   const MAX = isFullscreen ? MAX_FULLSCREEN : MAX_NORMAL;
-  const { girisler, cikislar, sonGuncelleme } = useBildirimEkrani(sesAcik, MAX);
+  const { girisler, cikislar, sonGuncelleme, hataVar } = useBildirimEkrani(sesAcik, MAX);
   const [saat, setSaat] = useState('');
   const [tarih, setTarih] = useState('');
 
@@ -337,7 +385,7 @@ export default function EkranPage() {
             {sesAcik ? 'Ses Açık' : 'Ses Kapalı'}
           </button>
           <span className="text-gray-700 text-xs">{sonGuncelleme ? `${sonGuncelleme}` : 'Bağlanıyor...'}</span>
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+          <span className={`w-2 h-2 rounded-full ${hataVar ? 'bg-red-500' : 'bg-green-500 animate-pulse'}`} />
         </div>
       </div>
 
