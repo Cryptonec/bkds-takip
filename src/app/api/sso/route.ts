@@ -34,7 +34,10 @@ const BKDS_APP_URL = process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
 /** HMAC-SHA256 JWT doğrulama — PyJWT HS256 ile uyumlu */
 function verifyHs256Jwt(token: string, secret: string): Record<string, any> | null {
   const parts = token.split('.');
-  if (parts.length !== 3) return null;
+  if (parts.length !== 3) {
+    console.error('[SSO] Token format hatalı, parça sayısı:', parts.length);
+    return null;
+  }
 
   const [headerB64, payloadB64, sigB64] = parts;
   const data = `${headerB64}.${payloadB64}`;
@@ -43,11 +46,16 @@ function verifyHs256Jwt(token: string, secret: string): Record<string, any> | nu
     .update(data)
     .digest('base64url');
 
+  console.log('[SSO] Token doğrulama — gelen imza:', sigB64.slice(0, 10) + '...', '| beklenen:', expectedSig.slice(0, 10) + '...');
+
   // Timing-safe karşılaştırma
   try {
     const a = Buffer.from(sigB64);
     const b = Buffer.from(expectedSig);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      console.error('[SSO] İmza eşleşmedi — SSO_SECRET yanlış olabilir');
+      return null;
+    }
   } catch {
     return null;
   }
@@ -55,7 +63,11 @@ function verifyHs256Jwt(token: string, secret: string): Record<string, any> | nu
   try {
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8'));
     // Süre kontrolü
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+      console.error('[SSO] Token süresi dolmuş, exp:', payload.exp, 'now:', Math.floor(Date.now() / 1000));
+      return null;
+    }
+    console.log('[SSO] Token geçerli, email:', payload.email, 'org_slug:', payload.org_slug);
     return payload;
   } catch {
     return null;
