@@ -50,15 +50,20 @@ export async function GET(req: NextRequest) {
     const secretKey = new TextEncoder().encode(SSO_SECRET);
     const { payload: verified } = await jwtVerify(token, secretKey, { algorithms: ['HS256'] });
     payload = verified as Record<string, any>;
-    console.log('[SSO] Token geçerli, email:', payload.email, 'org_slug:', payload.org_slug);
+    console.log('[SSO] Token geçerli, payload:', JSON.stringify(payload));
   } catch (err: any) {
     console.error('[SSO] JWT doğrulama hatası:', err?.message ?? err);
+    console.error('[SSO] SSO_SECRET uzunluğu:', SSO_SECRET.length, '| ilk 4 karakter:', SSO_SECRET.slice(0, 4));
     return NextResponse.redirect(new URL('/giris?error=sso_gecersiz', BKDS_APP_URL));
   }
 
-  const { email, name, role, org_slug } = payload;
+  const org_slug = payload.org_slug;
+  const role = payload.role;
+  // email yoksa meb_username'den türet
+  const email: string = payload.email ?? `${payload.meb_username}@bkds.sso`;
+  const name: string = payload.name ?? payload.meb_username ?? email;
 
-  if (!email || !org_slug) {
+  if (!org_slug) {
     return NextResponse.redirect(new URL('/giris?error=sso_eksik_alan', BKDS_APP_URL));
   }
 
