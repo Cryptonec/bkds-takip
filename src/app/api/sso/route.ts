@@ -44,6 +44,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/giris?error=sso_token_eksik', BKDS_APP_URL));
   }
 
+  // Token'ı manuel olarak doğrula (jose fallback olarak da dene)
+  const parts = token.split('.');
+  if (parts.length === 3) {
+    const { createHmac } = await import('crypto');
+    const computedSig = createHmac('sha256', SSO_SECRET).update(`${parts[0]}.${parts[1]}`).digest('base64url');
+    const tokenSig = parts[2];
+    console.log('[SSO] HMAC doğrulama:', computedSig === tokenSig ? 'BAŞARILI ✓' : 'BAŞARISIZ ✗');
+    console.log('[SSO] Beklenen imza :', computedSig);
+    console.log('[SSO] Token imzası  :', tokenSig);
+    console.log('[SSO] Secret uzunluk:', SSO_SECRET.length, '| ilk 8:', SSO_SECRET.slice(0, 8));
+    try {
+      const rawPayload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+      console.log('[SSO] Token payload :', JSON.stringify(rawPayload));
+    } catch {}
+  }
+
   // jose ile HS256 doğrulama — PyJWT ile tam uyumlu
   let payload: Record<string, any>;
   try {
