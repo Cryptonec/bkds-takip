@@ -34,24 +34,27 @@ export function calculateAttendanceStatus(input: AttendanceInput): AttendanceSta
   const girisGecSaniye = (new Date(bkdsGiris).getTime() - dersBaslangic.getTime()) / 1000;
   const gecGeldi = girisGecSaniye > 0;
 
-  // Erken çıkış: ders BAŞLANGICINDAN itibaren 40 dk geçmeden çıkış yapıldıysa
+  // Erken çıkış: gerçek GİRİŞ zamanından itibaren 40 dk geçmeden çıkış yapıldıysa
   const MIN_KALMA_DK = 40;
 
   if (bkdsCikis) {
-    // Ders başlangıcından çıkışa kadar geçen süre
-    const dersBasindanCikisaDk = minutesDiff(dersBaslangic, new Date(bkdsCikis));
-    if (dersBasindanCikisaDk < MIN_KALMA_DK) return 'erken_cikis';
+    // Gerçek giriş→çıkış süresi (giriş varsa oradan, yoksa ders başlangıcından)
+    const referansBas = bkdsGiris ? new Date(bkdsGiris) : dersBaslangic;
+    const kalmaDakika = minutesDiff(referansBas, new Date(bkdsCikis));
+    if (kalmaDakika < MIN_KALMA_DK) return 'erken_cikis';
+    // 40 dk dolduysa ve ders bitmişse → tamamlandı
+    if (now >= dersBitis) return 'tamamlandi';
+    // 40 dk doldu ama ders hâlâ devam ediyorsa → derste (veya geç geldi)
+    return gecGeldi ? 'gec_geldi' : 'derste';
   }
 
   if (now > dersBitis) {
     const cikisGereken = new Date(dersBitis.getTime() + 10 * 60 * 1000);
-    if (!bkdsCikis && now > cikisGereken) return 'cikis_eksik';
-    if (bkdsCikis) return 'tamamlandi';
+    if (now > cikisGereken) return 'cikis_eksik';
     return gecGeldi ? 'gec_geldi' : 'derste';
   }
 
-  // Ders devam ediyor
-  if (bkdsCikis) return 'erken_cikis'; // Ders bitmeden çıktıysa ve 40 dk dolmadıysa zaten yukarıda yakalandı
+  // Ders devam ediyor, çıkış yok
   return gecGeldi ? 'gec_geldi' : 'derste';
 }
 

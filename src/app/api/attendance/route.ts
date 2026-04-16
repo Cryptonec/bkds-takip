@@ -63,12 +63,11 @@ export async function GET(req: NextRequest) {
     const baslangic = new Date(a.lessonSession.baslangic);
     const bitis = new Date(a.lessonSession.bitis);
     const dakikaKaldi = (baslangic.getTime() - now.getTime()) / 60000;
-    const dersSuresi = (bitis.getTime() - baslangic.getTime()) / 60000;
-    const minKalma = Math.min(40, dersSuresi * 0.8);
+    const minKalma = 40; // sadece statusLabel için kullanılıyor
     const yaklasanUyari = dakikaKaldi > 0 && dakikaKaldi <= 40 && !a.gercekGiris && a.lessonSession.bkdsRequired;
     const gelmediUyari = dakikaKaldi < -5 && !a.gercekGiris && a.lessonSession.bkdsRequired && a.status !== 'bkds_muaf';
-    const erkenCikisUyari = a.gercekGiris && a.gercekCikis &&
-      ((new Date(a.gercekCikis).getTime() - new Date(a.gercekGiris).getTime()) / 60000) < minKalma;
+    // Motor tarafından hesaplanan statüyle tutarlı ol — bağımsız hesap hatalı bildirimlere yol açıyordu
+    const erkenCikisUyari = a.status === 'erken_cikis';
 
     return {
       id: a.id,

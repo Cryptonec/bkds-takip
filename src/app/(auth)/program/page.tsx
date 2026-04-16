@@ -1,65 +1,93 @@
 'use client';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useLiveAttendance } from '@/lib/hooks/useLiveAttendance';
 import { BildirimPanel } from '@/components/canli/BildirimPanel';
 import {
   RefreshCw, Wifi, WifiOff, UserCheck, LogOut, GraduationCap,
   CheckCircle2, XCircle, PlayCircle, Timer, Clock, AlertTriangle,
-  CalendarDays,
+  CalendarDays, AlertCircle,
 } from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
 import type { OgrenciRow } from '@/lib/hooks/useLiveAttendance';
 
 // ──────────────────────────────────────────────
-// Renk körlüğü dostu statü paleti
+// Gerçek DB statüsü → renk/ikon/etiket paleti
 // ──────────────────────────────────────────────
-type StatusKey = 'COMPLETED' | 'IN_PROGRESS' | 'LATE' | 'EARLY_EXIT' | 'SCHEDULED' | 'ABSENT' | 'default';
+type DbStatus =
+  | 'bekleniyor' | 'gecikiyor' | 'giris_eksik' | 'kritik'
+  | 'gec_geldi' | 'giris_tamam' | 'derste'
+  | 'cikis_eksik' | 'erken_cikis' | 'tamamlandi' | 'bkds_muaf';
 
-const STATUS_STYLE: Record<StatusKey, {
+const STATUS_STYLE: Record<DbStatus, {
   bg: string; text: string; border: string;
   icon: React.ReactNode; label: string; badgeBg: string;
 }> = {
-  COMPLETED: {
+  tamamlandi: {
     bg: 'bg-blue-600', text: 'text-white', border: 'border-blue-700',
     icon: <CheckCircle2 className="w-4 h-4" />, label: 'Tamamlandı', badgeBg: 'bg-blue-700',
   },
-  IN_PROGRESS: {
+  derste: {
     bg: 'bg-sky-600', text: 'text-white', border: 'border-sky-700',
     icon: <PlayCircle className="w-4 h-4" />, label: 'Derste', badgeBg: 'bg-sky-700',
   },
-  LATE: {
+  giris_tamam: {
+    bg: 'bg-sky-600', text: 'text-white', border: 'border-sky-700',
+    icon: <PlayCircle className="w-4 h-4" />, label: 'Derste', badgeBg: 'bg-sky-700',
+  },
+  gec_geldi: {
     bg: 'bg-orange-500', text: 'text-white', border: 'border-orange-600',
     icon: <Timer className="w-4 h-4" />, label: 'Geç Geldi', badgeBg: 'bg-orange-600',
   },
-  EARLY_EXIT: {
+  erken_cikis: {
     bg: 'bg-violet-600', text: 'text-white', border: 'border-violet-700',
     icon: <LogOut className="w-4 h-4" />, label: 'Erken Çıkış', badgeBg: 'bg-violet-700',
   },
-  SCHEDULED: {
+  bekleniyor: {
     bg: 'bg-slate-500', text: 'text-white', border: 'border-slate-600',
     icon: <Clock className="w-4 h-4" />, label: 'Planlandı', badgeBg: 'bg-slate-600',
   },
-  ABSENT: {
-    bg: 'bg-rose-600', text: 'text-white', border: 'border-rose-700',
-    icon: <XCircle className="w-4 h-4" />, label: 'Gelmedi', badgeBg: 'bg-rose-700',
+  gecikiyor: {
+    bg: 'bg-yellow-500', text: 'text-white', border: 'border-yellow-600',
+    icon: <AlertCircle className="w-4 h-4" />, label: 'Gecikiyor', badgeBg: 'bg-yellow-600',
   },
-  default: {
+  giris_eksik: {
+    bg: 'bg-rose-500', text: 'text-white', border: 'border-rose-600',
+    icon: <AlertTriangle className="w-4 h-4" />, label: 'Giriş Eksik', badgeBg: 'bg-rose-600',
+  },
+  kritik: {
+    bg: 'bg-rose-700', text: 'text-white', border: 'border-rose-800',
+    icon: <XCircle className="w-4 h-4" />, label: 'Kritik!', badgeBg: 'bg-rose-800',
+  },
+  cikis_eksik: {
+    bg: 'bg-amber-600', text: 'text-white', border: 'border-amber-700',
+    icon: <AlertCircle className="w-4 h-4" />, label: 'Çıkış Eksik', badgeBg: 'bg-amber-700',
+  },
+  bkds_muaf: {
     bg: 'bg-slate-400', text: 'text-white', border: 'border-slate-500',
-    icon: <Clock className="w-4 h-4" />, label: 'Bilinmiyor', badgeBg: 'bg-slate-500',
+    icon: <CheckCircle2 className="w-4 h-4" />, label: 'BKDS Muaf', badgeBg: 'bg-slate-500',
   },
 };
 
+const DEFAULT_STYLE = {
+  bg: 'bg-slate-400', text: 'text-white', border: 'border-slate-500',
+  icon: <Clock className="w-4 h-4" />, label: 'Bilinmiyor', badgeBg: 'bg-slate-500',
+};
+
 function getStyle(status: string) {
-  return STATUS_STYLE[(status as StatusKey)] ?? STATUS_STYLE.default;
+  return STATUS_STYLE[status as DbStatus] ?? DEFAULT_STYLE;
 }
+
+// ──────────────────────────────────────────────
+// Filtre grupları
+// ──────────────────────────────────────────────
+const ABSENT_STATUSES = ['gecikiyor', 'giris_eksik', 'kritik'];
 
 // ──────────────────────────────────────────────
 // Öğrenci kartı
 // ──────────────────────────────────────────────
 function OgrenciKart({ row }: { row: OgrenciRow }) {
   const s = getStyle(row.status);
-  const isCritical = row.gelmediUyari && row.status === 'ABSENT';
-  const label = isCritical ? 'Kritik!' : (row.statusLabel || s.label);
+  const isCritical = row.status === 'kritik';
 
   return (
     <div className={cn(
@@ -70,7 +98,7 @@ function OgrenciKart({ row }: { row: OgrenciRow }) {
       {/* Üst: ikon + etiket */}
       <div className={cn('flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold', s.badgeBg)}>
         {s.icon}
-        <span>{label}</span>
+        <span>{s.label}</span>
       </div>
 
       {/* Gövde */}
@@ -83,10 +111,10 @@ function OgrenciKart({ row }: { row: OgrenciRow }) {
       </div>
 
       {/* Alt: saatler */}
-      <div className="px-3 pb-2 text-xs opacity-90 flex items-center gap-2">
+      <div className="px-3 pb-2 text-xs opacity-90 flex items-center gap-2 flex-wrap">
         <span className="font-mono">{formatTime(row.baslangic)} – {formatTime(row.bitis)}</span>
         {row.gercekGiris && (
-          <span className="ml-auto flex items-center gap-0.5">
+          <span className="flex items-center gap-0.5 ml-auto">
             <UserCheck className="w-3 h-3" />
             {formatTime(row.gercekGiris)}
           </span>
@@ -110,16 +138,25 @@ function OgrenciKart({ row }: { row: OgrenciRow }) {
 // ──────────────────────────────────────────────
 // Legend
 // ──────────────────────────────────────────────
-const LEGEND_ITEMS: StatusKey[] = ['IN_PROGRESS', 'LATE', 'COMPLETED', 'EARLY_EXIT', 'SCHEDULED', 'ABSENT'];
+const LEGEND: Array<{ status: DbStatus; show?: boolean }> = [
+  { status: 'derste' },
+  { status: 'gec_geldi' },
+  { status: 'tamamlandi' },
+  { status: 'erken_cikis' },
+  { status: 'bekleniyor' },
+  { status: 'gecikiyor' },
+  { status: 'giris_eksik' },
+  { status: 'kritik' },
+];
 
 function Legend() {
   return (
     <div className="flex flex-wrap items-center gap-3 text-xs">
-      {LEGEND_ITEMS.map(key => {
-        const s = STATUS_STYLE[key];
+      {LEGEND.map(({ status }) => {
+        const s = STATUS_STYLE[status];
         return (
-          <span key={key} className="flex items-center gap-1.5">
-            <span className={cn('w-5 h-5 rounded flex items-center justify-center', s.bg)}>
+          <span key={status} className="flex items-center gap-1.5">
+            <span className={cn('w-5 h-5 rounded flex items-center justify-center shrink-0', s.bg)}>
               {s.icon}
             </span>
             <span className="text-gray-600">{s.label}</span>
@@ -131,19 +168,33 @@ function Legend() {
 }
 
 // ──────────────────────────────────────────────
-// Toast — sol alt
+// Toast bildirimleri — sol alt
 // ──────────────────────────────────────────────
-function ToastStack({ yeniGirisler, yeniCikislar, yeniPersonelGiris, yeniPersonelCikis }: {
+function ToastStack({
+  yeniGirisler, yeniCikislar, yeniPersonelGiris, yeniPersonelCikis,
+}: {
   yeniGirisler: OgrenciRow[];
   yeniCikislar: OgrenciRow[];
   yeniPersonelGiris: Array<{ id: string; ad: string; derslik?: string }>;
   yeniPersonelCikis: Array<{ id: string; ad: string; derslik?: string }>;
 }) {
   const items = [
-    ...yeniGirisler.map(r => ({ key: `og-${r.ogrenciId}`, icon: <UserCheck className="w-4 h-4" />, bg: 'bg-blue-600', text: r.ogrenciAdi, sub: `Öğrenci Girişi · ${r.derslik}` })),
-    ...yeniCikislar.map(r => ({ key: `oc-${r.ogrenciId}`, icon: <LogOut className="w-4 h-4" />, bg: 'bg-violet-600', text: r.ogrenciAdi, sub: `Öğrenci Çıkışı · ${r.derslik}` })),
-    ...yeniPersonelGiris.map(p => ({ key: `pg-${p.id}`, icon: <GraduationCap className="w-4 h-4" />, bg: 'bg-sky-600', text: p.ad, sub: `Derse Başladı${p.derslik ? ` · ${p.derslik}` : ''}` })),
-    ...yeniPersonelCikis.map(p => ({ key: `pc-${p.id}`, icon: <LogOut className="w-4 h-4" />, bg: 'bg-orange-500', text: p.ad, sub: `Ders Tamamlandı${p.derslik ? ` · ${p.derslik}` : ''}` })),
+    ...yeniGirisler.map(r => ({
+      key: `og-${r.ogrenciId}`, icon: <UserCheck className="w-4 h-4" />,
+      bg: 'bg-sky-600', text: r.ogrenciAdi, sub: `Öğrenci Girişi · ${r.derslik}`,
+    })),
+    ...yeniCikislar.map(r => ({
+      key: `oc-${r.ogrenciId}`, icon: <LogOut className="w-4 h-4" />,
+      bg: 'bg-violet-600', text: r.ogrenciAdi, sub: `Öğrenci Çıkışı · ${r.derslik}`,
+    })),
+    ...yeniPersonelGiris.map(p => ({
+      key: `pg-${p.id}`, icon: <GraduationCap className="w-4 h-4" />,
+      bg: 'bg-sky-700', text: p.ad, sub: `Derse Başladı${p.derslik ? ` · ${p.derslik}` : ''}`,
+    })),
+    ...yeniPersonelCikis.map(p => ({
+      key: `pc-${p.id}`, icon: <LogOut className="w-4 h-4" />,
+      bg: 'bg-orange-500', text: p.ad, sub: `Ders Tamamlandı${p.derslik ? ` · ${p.derslik}` : ''}`,
+    })),
   ];
   if (items.length === 0) return null;
   return (
@@ -166,27 +217,37 @@ function ToastStack({ yeniGirisler, yeniCikislar, yeniPersonelGiris, yeniPersone
 // ──────────────────────────────────────────────
 export default function ProgramPage() {
   const [filterStatus, setFilterStatus] = useState<string>('hepsi');
+
+  // Sayfa açıldığı anda geçmiş bildirimleri göstermemek için
+  // useLiveAttendance'ın isFirstFetch mekanizması yeterli —
+  // yeniBildirimler sadece sayfa açıldıktan SONRA gelen yenileri içerir.
   const {
     data, loading, error, lastUpdated, refresh,
     yeniBildirimler, dismissBildirim,
     yeniGirisler, yeniCikislar,
     yeniPersonelGiris, yeniPersonelCikis,
-  } = useLiveAttendance(undefined, 5000);
+  } = useLiveAttendance(undefined, 3000); // 3s — gerçek zamanlı BKDS sync
 
   const rows = data?.ogrenciRows ?? [];
 
-  // Bugünün sayaçları (header)
-  const gelmediSayisi  = rows.filter(r => r.gelmediUyari || r.status === 'ABSENT').length;
+  // Header sayaçları (sadece aktif, yani ders vakti gelmiş olanlar)
+  const gelmediSayisi   = rows.filter(r => r.gelmediUyari).length;
   const gecikiyorSayisi = rows.filter(r => r.yaklasanUyari && !r.gercekGiris).length;
-  const cikisBekliyor  = rows.filter(r => r.erkenCikisUyari).length;
+  const erkenCikisSayisi = rows.filter(r => r.erkenCikisUyari).length;
 
+  // Filtre
   const filteredRows = filterStatus === 'hepsi'
     ? rows
-    : rows.filter(r => r.status === filterStatus);
+    : filterStatus === 'gelmedi'
+      ? rows.filter(r => ABSENT_STATUSES.includes(r.status))
+      : rows.filter(r => r.status === filterStatus);
+
+  const count = (s: string) =>
+    s === 'gelmedi' ? rows.filter(r => ABSENT_STATUSES.includes(r.status)).length
+    : rows.filter(r => r.status === s).length;
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
-      {/* Toast bildirimleri — sol alt */}
       <ToastStack
         yeniGirisler={yeniGirisler}
         yeniCikislar={yeniCikislar}
@@ -194,7 +255,7 @@ export default function ProgramPage() {
         yeniPersonelCikis={yeniPersonelCikis}
       />
 
-      {/* Uyarı bildirimleri paneli — sağ alt */}
+      {/* Sayfa açıldıktan SONRA oluşan bildirimler burada çıkar */}
       <BildirimPanel bildirimler={yeniBildirimler} onDismiss={dismissBildirim} />
 
       {/* ── Header ── */}
@@ -209,7 +270,7 @@ export default function ProgramPage() {
           )}
         </div>
 
-        {/* Canlı sayaçlar — sadece bugün */}
+        {/* Canlı sayaçlar */}
         <div className="flex items-center gap-2 flex-1 flex-wrap">
           {gelmediSayisi > 0 && (
             <span className="flex items-center gap-1.5 bg-rose-50 border border-rose-300 text-rose-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
@@ -220,13 +281,13 @@ export default function ProgramPage() {
           {gecikiyorSayisi > 0 && (
             <span className="flex items-center gap-1.5 bg-yellow-50 border border-yellow-300 text-yellow-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
               <Clock className="w-3.5 h-3.5" />
-              {gecikiyorSayisi} gecikiyor
+              {gecikiyorSayisi} yaklaşıyor
             </span>
           )}
-          {cikisBekliyor > 0 && (
+          {erkenCikisSayisi > 0 && (
             <span className="flex items-center gap-1.5 bg-violet-50 border border-violet-300 text-violet-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
               <LogOut className="w-3.5 h-3.5" />
-              {cikisBekliyor} çıkış bekliyor
+              {erkenCikisSayisi} erken çıkış
             </span>
           )}
         </div>
@@ -237,7 +298,7 @@ export default function ProgramPage() {
             error ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50',
           )}>
             {error ? <WifiOff className="w-3.5 h-3.5" /> : <Wifi className="w-3.5 h-3.5" />}
-            {error ? 'Bağlantı Hatası' : 'Canlı · 5s'}
+            {error ? 'Bağlantı Hatası' : 'Canlı · 3s'}
           </span>
           <button
             onClick={refresh}
@@ -252,13 +313,13 @@ export default function ProgramPage() {
       {/* ── Filtre çubuğu ── */}
       <div className="bg-white border-b border-gray-100 px-6 py-2 flex items-center gap-2 overflow-x-auto shrink-0">
         {[
-          { key: 'hepsi', label: `Tümü (${rows.length})` },
-          { key: 'IN_PROGRESS', label: `Derste (${rows.filter(r => r.status === 'IN_PROGRESS').length})` },
-          { key: 'LATE',       label: `Geç Geldi (${rows.filter(r => r.status === 'LATE').length})` },
-          { key: 'ABSENT',     label: `Gelmedi (${rows.filter(r => r.status === 'ABSENT').length})` },
-          { key: 'SCHEDULED',  label: `Planlandı (${rows.filter(r => r.status === 'SCHEDULED').length})` },
-          { key: 'COMPLETED',  label: `Tamamlandı (${rows.filter(r => r.status === 'COMPLETED').length})` },
-          { key: 'EARLY_EXIT', label: `Erken Çıkış (${rows.filter(r => r.status === 'EARLY_EXIT').length})` },
+          { key: 'hepsi',       label: `Tümü (${rows.length})` },
+          { key: 'derste',      label: `Derste (${count('derste') + count('giris_tamam') + count('gec_geldi')})` },
+          { key: 'gelmedi',     label: `Gelmedi (${count('gelmedi')})` },
+          { key: 'erken_cikis', label: `Erken Çıkış (${count('erken_cikis')})` },
+          { key: 'bekleniyor',  label: `Planlandı (${count('bekleniyor')})` },
+          { key: 'tamamlandi',  label: `Tamamlandı (${count('tamamlandi')})` },
+          { key: 'bkds_muaf',   label: `BKDS Muaf (${count('bkds_muaf')})` },
         ].map(f => (
           <button
             key={f.key}
