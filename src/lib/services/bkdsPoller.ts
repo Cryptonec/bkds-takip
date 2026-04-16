@@ -12,6 +12,13 @@ const runningOrgs = new Set<string>();
 const orgIntervals = new Map<string, ReturnType<typeof setInterval>>();
 const lastPollHash = new Map<string, string>();
 
+// 429 aldığında o kurum için backoff süresi (ms)
+const backoffUntil = new Map<string, number>();
+const backoffDelay = new Map<string, number>(); // mevcut bekleme süresi
+
+const MIN_BACKOFF = 30_000;  // 30 saniye
+const MAX_BACKOFF = 300_000; // 5 dakika
+
 function hashRecords(records: { individual_uuid: string; first_entry: string; last_exit?: string | null }[]): string {
   if (records.length === 0) return 'empty';
   return records
@@ -21,6 +28,10 @@ function hashRecords(records: { individual_uuid: string; first_entry: string; la
 }
 
 export async function runBkdsPollForOrg(organizationId: string): Promise<void> {
+  // Backoff süresi dolmadıysa atla
+  const until = backoffUntil.get(organizationId) ?? 0;
+  if (Date.now() < until) return;
+
   if (runningOrgs.has(organizationId)) return;
   runningOrgs.add(organizationId);
 
@@ -28,6 +39,10 @@ export async function runBkdsPollForOrg(organizationId: string): Promise<void> {
   try {
     const service = getBkdsService(organizationId);
     const records = await service.fetchToday();
+
+    // Başarılı istek — backoff sıfırla
+    backoffUntil.delete(organizationId);
+    backoffDelay.delete(organizationId);
 
     const hash = hashRecords(records);
     if (hash === lastPollHash.get(organizationId)) {
@@ -40,18 +55,23 @@ export async function runBkdsPollForOrg(organizationId: string): Promise<void> {
     const tarih = new Date();
     await service.saveAndAggregate(records, tarih);
 
-    // ── HIZLI YOL: ekranı hemen bildir ──────────────────────────────────
-    // saveAndAggregate BkdsAggregate + BkdsPersonelLog'u güncelledi.
-    // Ekran verisini hemen sorgula ve SSE ile push et — client fetch yapmak zorunda kalmaz.
     const ekranData = await getEkranData(organizationId);
     bkdsEvents.emit('update', { organizationId, ekranData });
     console.log(`[BKDS][${organizationId}] Ekran güncellendi (${Date.now() - t0}ms)`);
 
-  } catch (err) {
-    console.error(`[BKDS Poll][${organizationId}] Hata:`, err);
+  } catch (err: any) {
+    // 429 Too Many Requests → backoff uygula
+    if (err?.message?.includes('429')) {
+      const current = backoffDelay.get(organizationId) ?? MIN_BACKOFF;
+      const next = Math.min(current * 2, MAX_BACKOFF);
+      backoffDelay.set(organizationId, next);
+      backoffUntil.set(organizationId, Date.now() + next);
+      console.warn(`[BKDS Poll][${organizationId}] 429 alındı — ${next / 1000}s beklenecek`);
+    } else {
+      console.error(`[BKDS Poll][${organizationId}] Hata:`, err);
+    }
     return;
   } finally {
-    // Poll kilidi burada serbest bırakılır — recalculate beklenmez
     runningOrgs.delete(organizationId);
   }
 
@@ -85,7 +105,7 @@ export function isPollingActive(organizationId: string): boolean {
 export async function ensurePollerRunning(organizationId: string): Promise<void> {
   if (isPollingActive(organizationId)) return;
   const envInterval = Number(process.env.BKDS_POLL_INTERVAL);
-  const interval = envInterval > 0 && !isNaN(envInterval) ? envInterval : 2000; // varsayılan 2s
+  const interval = envInterval > 0 && !isNaN(envInterval) ? envInterval : 15000; // varsayılan 15s
   startPollingForOrg(organizationId, interval);
 }
 
@@ -96,9 +116,11 @@ export async function startAllPollers(): Promise<void> {
     where: { active: true },
     include: { credentials: { select: { pollInterval: true } } },
   });
-  for (const org of orgs) {
-    const interval = useEnv ? envInterval : (org.credentials[0]?.pollInterval ?? 2000); // varsayılan 2s
-    startPollingForOrg(org.id, interval);
+  // Kurumları 3 saniye aralıklı başlat — aynı anda API'ye çarpma
+  for (let i = 0; i < orgs.length; i++) {
+    const org = orgs[i];
+    const interval = useEnv ? envInterval : (org.credentials[0]?.pollInterval ?? 15000);
+    setTimeout(() => startPollingForOrg(org.id, interval), i * 3000);
   }
 }
 
