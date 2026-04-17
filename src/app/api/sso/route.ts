@@ -26,38 +26,82 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { createHash, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
 
 const SSO_SECRET = process.env.SSO_SECRET ?? '';
 const BKDS_APP_URL = process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
 
-/** Minimal HMAC-SHA256 JWT doğrulama (jose veya jsonwebtoken gerektirmez) */
-function verifyHs256Jwt(token: string, secret: string): Record<string, any> | null {
+/**
+ * SSO token doğrulaması.
+ * Rehapp'ın hangi imza stilini kullandığı %100 netleşene dek birkaç yaygın
+ * varyasyonu deniyoruz:
+ *   1. Standart HMAC-SHA256 (PyJWT `algorithm="HS256"`) — base64url imza
+ *   2. `SHA256(secret + data)` hex  — özel impl (Rehapp'ta kullanıldığı söyleniyor)
+ *   3. `SHA256(secret + data)` base64url
+ *   4. `SHA256(data + secret)` hex / base64url
+ * Hangisi eşleşirse payload dönüyor. Eşleşme olmazsa console'a detay
+ * basıyoruz ki gerçek algoritma kolayca tespit edilsin.
+ */
+function verifySsoToken(token: string, secret: string): Record<string, any> | null {
   const parts = token.split('.');
-  if (parts.length !== 3) return null;
+  if (parts.length !== 3) {
+    console.error('[SSO] Token 3 parça değil:', parts.length);
+    return null;
+  }
 
   const [headerB64, payloadB64, sigB64] = parts;
   const data = `${headerB64}.${payloadB64}`;
 
-  const expectedSig = createHash('sha256')
-    .update(secret + data) // HMAC-SHA256 basit impl
-    .digest('base64url');
+  const candidates: Record<string, string> = {
+    'HMAC-SHA256 base64url': createHmac('sha256', secret).update(data).digest('base64url'),
+    'HMAC-SHA256 hex': createHmac('sha256', secret).update(data).digest('hex'),
+    'SHA256(secret+data) base64url': createHash('sha256').update(secret + data).digest('base64url'),
+    'SHA256(secret+data) hex': createHash('sha256').update(secret + data).digest('hex'),
+    'SHA256(data+secret) base64url': createHash('sha256').update(data + secret).digest('base64url'),
+    'SHA256(data+secret) hex': createHash('sha256').update(data + secret).digest('hex'),
+  };
 
-  // Timing-safe karşılaştırma
-  try {
-    const a = Buffer.from(sigB64);
-    const b = Buffer.from(expectedSig);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-  } catch {
+  let matched: string | null = null;
+  for (const [label, expected] of Object.entries(candidates)) {
+    if (sigB64.length !== expected.length) continue;
+    try {
+      if (timingSafeEqual(Buffer.from(sigB64), Buffer.from(expected))) {
+        matched = label;
+        break;
+      }
+    } catch {
+      // length farkı gibi durumlar
+    }
+  }
+
+  if (!matched) {
+    console.error('[SSO] İmza eşleşmedi. Gelen sig:', sigB64);
+    console.error('[SSO] Denenen adaylar:');
+    for (const [label, expected] of Object.entries(candidates)) {
+      console.error(`  - ${label.padEnd(32)} = ${expected}`);
+    }
+    console.error('[SSO] Header (b64):', headerB64);
+    console.error('[SSO] Payload (b64):', payloadB64);
+    try {
+      console.error('[SSO] Header (decoded):', Buffer.from(headerB64, 'base64url').toString('utf-8'));
+      console.error('[SSO] Payload (decoded):', Buffer.from(payloadB64, 'base64url').toString('utf-8'));
+    } catch {
+      /* ignore */
+    }
     return null;
   }
 
+  console.log('[SSO] İmza eşleşti:', matched);
+
   try {
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8'));
-    // Süre kontrolü
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+      console.error('[SSO] Token süresi dolmuş. exp:', payload.exp, 'now:', Math.floor(Date.now() / 1000));
+      return null;
+    }
     return payload;
-  } catch {
+  } catch (e) {
+    console.error('[SSO] Payload JSON parse hatası:', e);
     return null;
   }
 }
@@ -74,7 +118,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/giris?error=sso_token_eksik', BKDS_APP_URL));
   }
 
-  const payload = verifyHs256Jwt(token, SSO_SECRET);
+  const payload = verifySsoToken(token, SSO_SECRET);
   if (!payload) {
     return NextResponse.redirect(new URL('/giris?error=sso_gecersiz', BKDS_APP_URL));
   }
