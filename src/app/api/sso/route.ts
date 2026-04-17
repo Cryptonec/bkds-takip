@@ -79,7 +79,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/giris?error=sso_gecersiz', BKDS_APP_URL));
   }
 
-  const { email, name, role, org_slug } = payload;
+  const { role, org_slug, meb_username } = payload;
+
+  // Rehapp token'ında `email` alanı yoksa `meb_username`'den türet.
+  // Kullanıcı `User` tablosunda `@@unique([email, organizationId])` ile
+  // organizasyon bazında tekil tutulduğu için deterministik bir sentetik
+  // e-posta yeterli.
+  const email: string | undefined =
+    payload.email ?? (meb_username ? `${meb_username}@meb.local` : undefined);
+  const name: string | undefined = payload.name ?? meb_username ?? email;
 
   if (!email || !org_slug) {
     return NextResponse.redirect(new URL('/giris?error=sso_eksik_alan', BKDS_APP_URL));
