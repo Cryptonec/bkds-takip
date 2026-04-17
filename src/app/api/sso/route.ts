@@ -171,9 +171,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/giris?error=kullanici_pasif', BKDS_APP_URL));
   }
 
-  // Tek kullanımlık SSO token'ı DB'ye kaydet
-  await prisma.ssoToken.create({
-    data: {
+  // Tek kullanımlık SSO token'ı DB'ye kaydet (upsert: yenile/geri durumuna dayanıklı)
+  // Replay koruması callback'teki `usedAt` kontrolü ile sağlanır.
+  await prisma.ssoToken.upsert({
+    where: { token },
+    create: {
       token,
       organizationId: org.id,
       userId: user.id,
@@ -181,6 +183,14 @@ export async function GET(req: NextRequest) {
       name: user.name,
       role: user.role,
       expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    },
+    update: {
+      // Var olan kaydın usedAt değerine dokunma — replay'i callback engeller.
+      organizationId: org.id,
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
     },
   });
 
