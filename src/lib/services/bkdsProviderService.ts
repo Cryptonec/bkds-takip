@@ -165,6 +165,7 @@ export class BkdsProviderService {
           tarih: dateOnly,
           adSoyad: r.individual_full_name,
           maskedTc: r.individual_identity_number ?? null,
+          individualType: r.individual_type ?? null,
           girisZamani: new Date(r.first_entry),
           cikisZamani: r.last_exit ? new Date(r.last_exit) : null,
         })),

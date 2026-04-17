@@ -250,6 +250,7 @@ model BkdsRaw {
   tarih          DateTime     @db.Date
   adSoyad        String
   maskedTc       String?
+  individualType Int?         // 1 = öğrenci, 2 = personel (BKDS individual_type)
   girisZamani    DateTime
   cikisZamani    DateTime?
   fetchedAt      DateTime     @default(now())

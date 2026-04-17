@@ -6,11 +6,12 @@ import { getActiveAlerts, generateAlerts } from '@/lib/services/alertService';
 import { getAttendanceStatusInfo } from '@/lib/services/attendanceEngine';
 import { getStaffStatusInfo } from '@/lib/services/staffAttendanceEngine';
 import { getBkdsService } from '@/lib/services/bkdsProviderService';
+import { matchMaskedName } from '@/lib/utils/normalize';
 import { prisma } from '@/lib/prisma';
 
 // Per-org son çekim zamanı
 const lastBkdsFetchMap = new Map<string, number>();
-const BKDS_FETCH_INTERVAL = 5000;
+const BKDS_FETCH_INTERVAL = 2000;
 
 function capitalizeDerslik(str: string): string {
   return str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -45,7 +46,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const [attendances, staffAttendances, alerts, personelLog] = await Promise.all([
+  const [attendances, staffAttendances, alerts, personelLog, ogrenciRawList, students] = await Promise.all([
     getLiveAttendance(tarih, orgId),
     getLiveStaffAttendance(tarih, orgId),
     getActiveAlerts(tarih, orgId),
@@ -54,6 +55,12 @@ export async function GET(req: NextRequest) {
       include: { staff: { select: { id: true, adSoyad: true } } },
       orderBy: { ilkGiris: 'asc' },
     }),
+    // Tüm öğrenci ham kayıtları (Lila import olmasa bile kullanılır)
+    prisma.bkdsRaw.findMany({
+      where: { organizationId: orgId, tarih: dateOnly, individualType: 1 },
+      orderBy: { girisZamani: 'asc' },
+    }),
+    prisma.student.findMany({ where: { organizationId: orgId, aktif: true } }),
   ]);
 
   const ogrenciRows = attendances.map((a) => {
@@ -162,6 +169,34 @@ export async function GET(req: NextRequest) {
     dersVar: personelRows.some(r => r.staffId === log.staffId),
   }));
 
+  // Tüm öğrenci girişleri: BkdsRaw'dan aggregate (masked isim + varsa Student eşleşmesi)
+  const ogrenciMap = new Map<string, { ilkGiris: Date; sonCikis: Date | null; studentId: string | null; ogrenciAdi: string }>();
+  for (const raw of ogrenciRawList) {
+    const matched = students.find(s => matchMaskedName(raw.adSoyad, s.adSoyad));
+    const key = matched?.id ?? raw.adSoyad;
+    const ogrenciAdi = matched?.adSoyad ?? raw.adSoyad;
+    const ex = ogrenciMap.get(key);
+    if (!ex) {
+      ogrenciMap.set(key, {
+        ilkGiris: raw.girisZamani,
+        sonCikis: raw.cikisZamani,
+        studentId: matched?.id ?? null,
+        ogrenciAdi,
+      });
+    } else {
+      if (raw.girisZamani < ex.ilkGiris) ex.ilkGiris = raw.girisZamani;
+      if (raw.cikisZamani && (!ex.sonCikis || raw.cikisZamani > ex.sonCikis)) ex.sonCikis = raw.cikisZamani;
+    }
+  }
+  const tumOgrenciGirisler = Array.from(ogrenciMap.entries()).map(([key, v]) => ({
+    studentId: v.studentId,
+    key,
+    ogrenciAdi: v.ogrenciAdi,
+    ilkGiris: v.ilkGiris,
+    sonCikis: v.sonCikis,
+    dersVar: ogrenciRows.some(r => r.ogrenciId === v.studentId),
+  }));
+
   return NextResponse.json({
     tarih: tarih.toISOString(),
     ogrenciRows,
@@ -172,6 +207,7 @@ export async function GET(req: NextRequest) {
     alertList: alerts,
     bildirimler,
     tumPersonelGirisler,
+    tumOgrenciGirisler,
     updatedAt: now.toISOString(),
   });
 }
