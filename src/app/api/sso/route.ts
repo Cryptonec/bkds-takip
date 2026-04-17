@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createHash, timingSafeEqual } from 'crypto';
+import { createHash, timingSafeEqual, randomBytes } from 'crypto';
 import { prisma } from '@/lib/prisma';
 
 const SSO_SECRET = process.env.SSO_SECRET ?? '';
@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
         organizationId: org.id,
         role: validRole as any,
         active: true,
-        password: null as any,
+        password: randomBytes(32).toString('hex'), // SSO kullanıcısı — giriş yapamaz
       },
     });
   } else if (!user.active) {
