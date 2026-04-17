@@ -197,17 +197,20 @@ export async function GET(req: NextRequest) {
     dersVar: ogrenciRows.some(r => r.ogrenciId === v.studentId),
   }));
 
-  return NextResponse.json({
-    tarih: tarih.toISOString(),
-    ogrenciRows,
-    personelRows,
-    statusCounts,
-    staffStatusCounts,
-    alerts: alerts.length,
-    alertList: alerts,
-    bildirimler,
-    tumPersonelGirisler,
-    tumOgrenciGirisler,
-    updatedAt: now.toISOString(),
-  });
+  return NextResponse.json(
+    {
+      tarih: tarih.toISOString(),
+      ogrenciRows,
+      personelRows,
+      statusCounts,
+      staffStatusCounts,
+      alerts: alerts.length,
+      alertList: alerts,
+      bildirimler,
+      tumPersonelGirisler,
+      tumOgrenciGirisler,
+      updatedAt: now.toISOString(),
+    },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
 }
