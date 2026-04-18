@@ -246,15 +246,17 @@ function OgrenciTable({
   faded?: boolean;
   onDelete?: (lessonSessionId: string, ogrenciAdi: string) => void;
 }) {
+  const px = kompakt ? 'px-3' : 'px-4';
   return (
     <table className={cn('w-full text-sm', faded && 'opacity-70')}>
       <thead>
         <tr className="text-xs border-b border-gray-100 bg-gray-50/50">
-          <th className="text-left px-4 py-2 font-medium text-gray-400 uppercase tracking-wide">Saat</th>
-          <th className="text-left px-4 py-2 font-medium text-gray-400 uppercase tracking-wide">Ad Soyad</th>
-          <th className="text-left px-4 py-2 font-medium text-gray-400 uppercase tracking-wide">Giriş / Çıkış</th>
-          {!derslikGizli && <th className="text-left px-4 py-2 font-medium text-gray-400 uppercase tracking-wide">Derslik</th>}
-          <th className="text-left px-4 py-2 font-medium text-gray-400 uppercase tracking-wide">Durum</th>
+          <th className={cn('text-left py-2 font-medium text-gray-400 uppercase tracking-wide', px)}>Ad Soyad</th>
+          <th className={cn('text-left py-2 font-medium text-gray-400 uppercase tracking-wide', px)}>Giriş</th>
+          <th className={cn('text-left py-2 font-medium text-gray-400 uppercase tracking-wide', px)}>Çıkış</th>
+          {!kompakt && <th className={cn('text-left py-2 font-medium text-gray-400 uppercase tracking-wide', px)}>Bitiş</th>}
+          {!derslikGizli && <th className={cn('text-left py-2 font-medium text-gray-400 uppercase tracking-wide', px)}>Derslik</th>}
+          <th className={cn('text-left py-2 font-medium text-gray-400 uppercase tracking-wide', px)}>Durum</th>
           {onDelete && <th className="w-10"></th>}
         </tr>
       </thead>
@@ -298,11 +300,6 @@ function OgrenciSatir({
       row.status === 'erken_cikis' && 'bg-purple-50/40',
       row.status === 'tamamlandi' && 'opacity-70',
     )}>
-      <td className={cn(px, 'py-2.5 w-20 text-sm font-semibold text-gray-700 tabular-nums')}>
-        {formatTime(row.baslangic)}
-        <div className="text-[10px] text-gray-400 font-normal">→ {formatTime(row.bitis)}</div>
-      </td>
-
       <td className={cn(px, 'py-2.5')}>
         <div className="flex items-center gap-1.5 flex-wrap">
           {girisYapti && <UserCheck className="w-4 h-4 text-green-600 shrink-0" />}
@@ -318,44 +315,40 @@ function OgrenciSatir({
             </span>
           )}
         </div>
-        <p className="text-xs text-gray-400 mt-0.5">{row.ogretmenAdi}</p>
+        <p className="text-xs text-gray-400 mt-0.5">
+          {formatTime(row.baslangic)} · {row.ogretmenAdi}
+        </p>
       </td>
 
-      {/* Giriş / Çıkış yan yana tek hücrede */}
-      <td className={cn(px, 'py-2.5 w-40')}>
-        <div className="flex items-center gap-2 flex-wrap">
-          {row.gercekGiris ? (
-            <span className="inline-flex items-center gap-1 bg-green-100 text-green-800 text-xs font-bold tabular-nums px-2 py-0.5 rounded-md border border-green-300">
-              <UserCheck className="w-3 h-3" />
-              {formatTime(row.gercekGiris)}
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 bg-gray-50 text-gray-300 text-xs font-bold px-2 py-0.5 rounded-md border border-gray-200">
-              <UserCheck className="w-3 h-3 opacity-40" />—
-            </span>
-          )}
-          <span className="text-gray-300">·</span>
-          {row.gercekCikis ? (
-            <span className={cn(
-              'inline-flex items-center gap-1 text-xs font-bold tabular-nums px-2 py-0.5 rounded-md border',
-              row.erkenCikisUyari
-                ? 'bg-purple-100 text-purple-800 border-purple-300'
-                : 'bg-orange-100 text-orange-800 border-orange-300',
-            )}>
-              <LogOut className="w-3 h-3" />
+      {/* Giriş — kendi sütunu */}
+      <td className={cn(px, 'py-2.5 w-24')}>
+        {row.gercekGiris ? (
+          <div className="flex items-center gap-1">
+            <UserCheck className="w-3.5 h-3.5 text-green-500 shrink-0" />
+            <span className="text-green-700 font-bold tabular-nums text-sm">{formatTime(row.gercekGiris)}</span>
+          </div>
+        ) : <span className="text-gray-200 text-sm">—</span>}
+      </td>
+
+      {/* Çıkış — kendi sütunu */}
+      <td className={cn(px, 'py-2.5 w-24')}>
+        {row.gercekCikis ? (
+          <div className="flex items-center gap-1">
+            <LogOut className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+            <span className={cn('font-bold tabular-nums text-sm', row.erkenCikisUyari ? 'text-purple-600' : 'text-orange-500')}>
               {formatTime(row.gercekCikis)}
             </span>
-          ) : row.gercekGiris ? (
-            <span className="inline-flex items-center gap-1 bg-green-50 text-green-700 text-xs italic px-2 py-0.5 rounded-md border border-green-200">
-              İçeride
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 bg-gray-50 text-gray-300 text-xs font-bold px-2 py-0.5 rounded-md border border-gray-200">
-              <LogOut className="w-3 h-3 opacity-40" />—
-            </span>
-          )}
-        </div>
+          </div>
+        ) : row.gercekGiris ? (
+          <span className="text-xs text-green-500 italic">İçeride</span>
+        ) : <span className="text-gray-200 text-sm">—</span>}
       </td>
+
+      {!kompakt && (
+        <td className={cn(px, 'py-2.5 w-16 text-xs text-gray-400 tabular-nums')}>
+          {formatTime(row.bitis)}
+        </td>
+      )}
 
       {!derslikGizli && (
         <td className={cn(px, 'py-2.5')}>
