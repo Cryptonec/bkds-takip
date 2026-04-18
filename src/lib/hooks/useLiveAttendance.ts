@@ -75,7 +75,7 @@ export interface Alert {
 
 export interface Bildirim {
   id: string;
-  tip: 'yaklasan' | 'gelmedi' | 'erken_cikis';
+  tip: 'gelmedi' | 'erken_cikis';
   mesaj: string;
   severity: 'uyari' | 'kritik';
   ogrenciAdi: string;
@@ -253,9 +253,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
           playBeep(yeniB.some(b => b.severity === 'kritik') ? 'kritik' : 'uyari');
           if (Notification.permission === 'granted') {
             yeniB.forEach(b => new Notification(
-              b.tip === 'yaklasan' ? '⚠️ Ders Yaklaşıyor'
-                : b.tip === 'erken_cikis' ? '⚡ Erken Çıkış'
-                : '🚨 Öğrenci Gelmedi',
+              b.tip === 'erken_cikis' ? '⚡ Erken Çıkış' : '🚨 Öğrenci Gelmedi',
               { body: b.mesaj, tag: b.id }
             ));
           }

@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef } from 'react';
-import { X, Clock, AlertTriangle, LogOut } from 'lucide-react';
+import { X, AlertTriangle, LogOut } from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
 import type { Bildirim } from '@/lib/hooks/useLiveAttendance';
 
@@ -28,7 +28,6 @@ function BildirimKart({ bildirim, onDismiss }: { bildirim: Bildirim; onDismiss: 
   }, [bildirim.id, onDismiss]);
 
   const styles = {
-    yaklasan:    { bg: 'bg-yellow-50 border-yellow-300', text: 'text-yellow-900', icon: <Clock className="w-4 h-4 text-yellow-600" />, baslik: '⚠️ Ders Yaklaşıyor', iconBg: 'bg-yellow-100' },
     gelmedi:     { bg: 'bg-red-50 border-red-300',       text: 'text-red-900',    icon: <AlertTriangle className="w-4 h-4 text-red-600" />, baslik: '🚨 Öğrenci Gelmedi', iconBg: 'bg-red-100' },
     erken_cikis: { bg: 'bg-purple-50 border-purple-300', text: 'text-purple-900', icon: <LogOut className="w-4 h-4 text-purple-600" />,    baslik: '⚡ Erken Çıkış',     iconBg: 'bg-purple-100' },
   };

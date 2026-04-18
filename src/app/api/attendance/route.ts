@@ -130,15 +130,6 @@ export async function GET(req: NextRequest) {
   }, {});
 
   const bildirimler = [
-    ...ogrenciRows.filter(r => r.yaklasanUyari).map(r => ({
-      id: `yaklasan-${r.id}`,
-      tip: 'yaklasan' as const,
-      mesaj: `${r.ogrenciAdi} — ${Math.round(r.dakikaKaldi)} dk sonra dersi başlıyor`,
-      severity: 'uyari' as const,
-      ogrenciAdi: r.ogrenciAdi,
-      derslik: r.derslik,
-      baslangic: r.baslangic,
-    })),
     ...ogrenciRows.filter(r => r.gelmediUyari).map(r => ({
       id: `gelmedi-${r.id}`,
       tip: 'gelmedi' as const,

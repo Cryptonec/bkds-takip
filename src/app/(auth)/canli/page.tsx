@@ -4,8 +4,13 @@ import { useLiveAttendance } from '@/lib/hooks/useLiveAttendance';
 import { OgrenciPaneli, StatusSummaryBar } from '@/components/canli/OgrenciPaneli';
 import { PersonelPaneli } from '@/components/canli/PersonelPaneli';
 import { BildirimPanel } from '@/components/canli/BildirimPanel';
-import { RefreshCw, Wifi, WifiOff, AlertTriangle, Clock, UserCheck, LogOut, GraduationCap } from 'lucide-react';
+import { ColorLegend } from '@/components/canli/ColorLegend';
+import { TumBildirimler } from '@/components/canli/TumBildirimler';
+import { DersEkleModal } from '@/components/canli/DersEkleModal';
+import { RefreshCw, Wifi, WifiOff, AlertTriangle, LogOut, UserCheck, GraduationCap, Plus } from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
+
+const COLORBLIND_KEY = 'canli-colorblind';
 
 function SaatSayaci({ lastUpdated }: { lastUpdated: Date | null }) {
   const [saat, setSaat] = useState('');
@@ -42,6 +47,8 @@ function SaatSayaci({ lastUpdated }: { lastUpdated: Date | null }) {
 export default function CanliPage() {
   const [activeTab, setActiveTab] = useState<'ogrenci' | 'personel'>('ogrenci');
   const [ogrenciFilter, setOgrenciFilter] = useState('hepsi');
+  const [colorblind, setColorblind] = useState(false);
+  const [dersEkleOpen, setDersEkleOpen] = useState(false);
   const {
     data, loading, error, lastUpdated, refresh,
     yeniBildirimler, dismissBildirim,
@@ -49,11 +56,34 @@ export default function CanliPage() {
     yeniPersonelGiris, yeniPersonelCikis,
   } = useLiveAttendance(undefined, 5000);
 
+  useEffect(() => {
+    const v = localStorage.getItem(COLORBLIND_KEY);
+    if (v === '1') setColorblind(true);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(COLORBLIND_KEY, colorblind ? '1' : '0');
+  }, [colorblind]);
+
+  async function handleDeleteLesson(lessonSessionId: string, ogrenciAdi: string) {
+    try {
+      const res = await fetch(`/api/lesson-sessions/${lessonSessionId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(`Silinemedi: ${data.error ?? 'bilinmeyen hata'}`);
+        return;
+      }
+      await refresh();
+    } catch {
+      alert(`${ogrenciAdi} dersi silinirken hata oluştu`);
+    }
+  }
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       <BildirimPanel bildirimler={yeniBildirimler} onDismiss={dismissBildirim} />
 
-      {/* Öğrenci giriş toast - yeşil, üst orta */}
+      {/* Öğrenci giriş toast */}
       {yeniGirisler.length > 0 && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none">
           {yeniGirisler.map(r => (
@@ -68,7 +98,7 @@ export default function CanliPage() {
         </div>
       )}
 
-      {/* Öğrenci çıkış toast - turuncu */}
+      {/* Öğrenci çıkış toast */}
       {yeniCikislar.length > 0 && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none"
           style={{ marginTop: yeniGirisler.length > 0 ? `${yeniGirisler.length * 72 + 16}px` : '0' }}>
@@ -84,7 +114,7 @@ export default function CanliPage() {
         </div>
       )}
 
-      {/* Personel giriş toast - mavi, sağ üst */}
+      {/* Personel giriş toast */}
       {yeniPersonelGiris.length > 0 && (
         <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
           {yeniPersonelGiris.map(r => (
@@ -99,7 +129,7 @@ export default function CanliPage() {
         </div>
       )}
 
-      {/* Personel çıkış toast - indigo, sağ üst (biraz aşağıda) */}
+      {/* Personel çıkış toast */}
       {yeniPersonelCikis.length > 0 && (
         <div className="fixed right-4 z-50 flex flex-col gap-2 pointer-events-none"
           style={{ top: yeniPersonelGiris.length > 0 ? `${yeniPersonelGiris.length * 72 + 16}px` : '16px' }}>
@@ -121,12 +151,6 @@ export default function CanliPage() {
         <div className="h-10 w-px bg-gray-200" />
 
         <div className="flex items-center gap-2 flex-1 flex-wrap">
-          {data && data.bildirimler.filter(b => b.tip === 'yaklasan').length > 0 && (
-            <div className="flex items-center gap-1.5 bg-yellow-50 border border-yellow-300 text-yellow-700 px-3 py-1.5 rounded-lg text-sm font-medium animate-pulse">
-              <Clock className="w-4 h-4" />
-              {data.bildirimler.filter(b => b.tip === 'yaklasan').length} ders yaklaşıyor
-            </div>
-          )}
           {data && data.bildirimler.filter(b => b.tip === 'gelmedi').length > 0 && (
             <div className="flex items-center gap-1.5 bg-red-50 border border-red-300 text-red-700 px-3 py-1.5 rounded-lg text-sm font-medium">
               <AlertTriangle className="w-4 h-4" />
@@ -142,6 +166,13 @@ export default function CanliPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setDersEkleOpen(true)}
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Ders Ekle
+          </button>
           <div className={cn('flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full font-medium',
             error ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50'
           )}>
@@ -154,6 +185,16 @@ export default function CanliPage() {
           </button>
         </div>
       </div>
+
+      {/* Renk legendi */}
+      <ColorLegend colorblind={colorblind} onToggleColorblind={() => setColorblind(v => !v)} />
+
+      {/* Toplu bildirimler paneli */}
+      {data && data.bildirimler.length > 0 && (
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+          <TumBildirimler bildirimler={data.bildirimler} />
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="bg-white border-b border-gray-200 px-6 shrink-0">
@@ -175,7 +216,7 @@ export default function CanliPage() {
         </div>
       </div>
 
-      {/* Content */}
+      {/* İçerik */}
       <div className="flex-1 overflow-auto bg-white">
         {loading && !data && (
           <div className="flex items-center justify-center h-full">
@@ -185,13 +226,24 @@ export default function CanliPage() {
         {data && activeTab === 'ogrenci' && (
           <>
             <StatusSummaryBar counts={data.statusCounts} activeFilter={ogrenciFilter} onFilter={setOgrenciFilter} />
-            <OgrenciPaneli rows={data.ogrenciRows} filter={ogrenciFilter} />
+            <OgrenciPaneli
+              rows={data.ogrenciRows}
+              filter={ogrenciFilter}
+              colorblind={colorblind}
+              onDelete={handleDeleteLesson}
+            />
           </>
         )}
         {data && activeTab === 'personel' && (
           <PersonelPaneli rows={data.personelRows} tumPersonelGirisler={data.tumPersonelGirisler ?? []} onRefresh={refresh} />
         )}
       </div>
+
+      <DersEkleModal
+        open={dersEkleOpen}
+        onClose={() => setDersEkleOpen(false)}
+        onCreated={() => refresh()}
+      />
     </div>
   );
 }
