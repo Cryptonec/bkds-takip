@@ -3,7 +3,11 @@ import { useState } from 'react';
 import { formatTime } from '@/lib/utils';
 import type { OgrenciRow } from '@/lib/hooks/useLiveAttendance';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, CheckCircle2, Shield, ChevronDown, ChevronUp, UserCheck, Eye, EyeOff, LogOut, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle, CheckCircle2, Shield, ChevronDown, ChevronUp, UserCheck,
+  Eye, EyeOff, LogOut, Trash2, Clock, Timer, PlayCircle, XCircle,
+  CalendarDays, TimerOff, MinusCircle,
+} from 'lucide-react';
 import { LEGEND_MAP } from './ColorLegend';
 
 function getZamanGrubu(row: OgrenciRow, now: Date): 'gecmis' | 'aktif' | 'yaklasan_40' | 'yaklasan_60' | 'sonra' {
@@ -30,7 +34,6 @@ function groupBySaat(rows: OgrenciRow[], now: Date) {
   const muaflar = rows.filter(r => r.status === 'bkds_muaf');
   const diger = rows.filter(r => r.status !== 'bkds_muaf');
 
-  // Saat bucket'ı üzerinden grupla (13:00-13:59 tek grup)
   const saatMap = new Map<string, OgrenciRow[]>();
   for (const row of diger) {
     const bucket = saatBucket(new Date(row.baslangic));
@@ -69,31 +72,105 @@ function groupBySaat(rows: OgrenciRow[], now: Date) {
   return { saatGruplari, muaflar };
 }
 
-const ZAMAN_STIL: Record<string, { dot: string; header: string; badge: string; pingAnim: boolean }> = {
-  aktif:       { dot: 'bg-red-500',    header: 'bg-red-600 text-white',     badge: 'bg-red-700 text-white border-red-800',       pingAnim: true },
-  yaklasan_40: { dot: 'bg-yellow-400', header: 'bg-yellow-500 text-white',  badge: 'bg-yellow-600 text-white border-yellow-700', pingAnim: false },
-  yaklasan_60: { dot: 'bg-blue-400',   header: 'bg-blue-500 text-white',    badge: 'bg-blue-600 text-white border-blue-700',     pingAnim: false },
-  sonra:       { dot: 'bg-gray-300',   header: 'bg-gray-200 text-gray-700', badge: 'bg-gray-300 text-gray-700 border-gray-400',  pingAnim: false },
-  gecmis:      { dot: 'bg-gray-200',   header: 'bg-gray-100 text-gray-400', badge: 'bg-gray-200 text-gray-400 border-gray-300',  pingAnim: false },
+/* ─── Kart stilleri: status → renk + ikon + etiket ─────────────────────── */
+
+type CardStyle = {
+  card: string;     // kart ana rengi + arka plan
+  header: string;   // üst şerit bg
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  accent: string;   // sol border
 };
 
-const ZAMAN_LABEL: Record<string, string> = {
-  aktif: 'Şu An', yaklasan_40: '40 dk İçinde', yaklasan_60: '1 Saat İçinde', sonra: 'Sonraki', gecmis: 'Geçmiş',
+function getCardStyle(row: OgrenciRow): CardStyle {
+  const hasGiris = !!row.gercekGiris;
+  switch (row.status) {
+    case 'bkds_muaf': return {
+      card: 'bg-gray-400 text-white',
+      header: 'bg-gray-500/80',
+      label: 'BKDS Muaf',
+      icon: MinusCircle,
+      accent: 'border-gray-300',
+    };
+    case 'tamamlandi': return {
+      card: 'bg-blue-600 text-white',
+      header: 'bg-blue-700/70',
+      label: 'Tamamlandı',
+      icon: CheckCircle2,
+      accent: 'border-blue-400',
+    };
+    case 'erken_cikis': return {
+      card: 'bg-violet-600 text-white',
+      header: 'bg-violet-700/70',
+      label: 'Erken Çıkış',
+      icon: LogOut,
+      accent: 'border-violet-400',
+    };
+    case 'cikis_eksik': return {
+      card: 'bg-purple-600 text-white',
+      header: 'bg-purple-700/70',
+      label: 'Çıkış Eksik',
+      icon: TimerOff,
+      accent: 'border-purple-400',
+    };
+    case 'gec_geldi': return {
+      card: 'bg-orange-500 text-white',
+      header: 'bg-orange-600/70',
+      label: 'Geç Geldi',
+      icon: Clock,
+      accent: 'border-orange-300',
+    };
+    case 'derste':
+    case 'giris_tamam': return {
+      card: 'bg-sky-600 text-white',
+      header: 'bg-sky-700/70',
+      label: 'Derste',
+      icon: PlayCircle,
+      accent: 'border-sky-400',
+    };
+    case 'kritik':
+    case 'giris_eksik': return {
+      card: 'bg-red-600 text-white',
+      header: 'bg-red-700/70',
+      label: row.status === 'kritik' ? 'Kritik!' : 'Giriş Eksik',
+      icon: XCircle,
+      accent: 'border-red-400',
+    };
+    case 'gecikiyor': return {
+      card: 'bg-amber-400 text-amber-900',
+      header: 'bg-amber-500/80 text-amber-900',
+      label: 'Gecikiyor',
+      icon: Timer,
+      accent: 'border-amber-500',
+    };
+  }
+  if (hasGiris) return {
+    card: 'bg-sky-600 text-white',
+    header: 'bg-sky-700/70',
+    label: 'Derste',
+    icon: PlayCircle,
+    accent: 'border-sky-400',
+  };
+  return {
+    card: 'bg-slate-500 text-white',
+    header: 'bg-slate-600/70',
+    label: 'Planlandı',
+    icon: CalendarDays,
+    accent: 'border-slate-300',
+  };
+}
+
+/* ─── Saat başlığı stilleri ────────────────────────────────────────────── */
+
+const ZAMAN_STIL: Record<string, { bar: string; badge: string; pingAnim: boolean; label: string }> = {
+  aktif:       { bar: 'from-red-500 to-red-600 text-white',       badge: 'bg-white text-red-700',        pingAnim: true,  label: 'Şu An' },
+  yaklasan_40: { bar: 'from-yellow-400 to-yellow-500 text-white', badge: 'bg-white text-yellow-700',     pingAnim: false, label: '40 dk İçinde' },
+  yaklasan_60: { bar: 'from-blue-400 to-blue-500 text-white',     badge: 'bg-white text-blue-700',       pingAnim: false, label: '1 Saat İçinde' },
+  sonra:       { bar: 'from-gray-200 to-gray-300 text-gray-700',  badge: 'bg-white text-gray-700',       pingAnim: false, label: 'Sonraki' },
+  gecmis:      { bar: 'from-gray-100 to-gray-200 text-gray-500',  badge: 'bg-white text-gray-500',       pingAnim: false, label: 'Geçmiş' },
 };
 
-const STATUS_STIL: Record<string, string> = {
-  bekleniyor:  'bg-gray-50 text-gray-500 border-gray-200',
-  gecikiyor:   'bg-yellow-50 text-yellow-700 border-yellow-300',
-  giris_eksik: 'bg-orange-50 text-orange-700 border-orange-300',
-  kritik:      'bg-red-50 text-red-700 border-red-400',
-  gec_geldi:   'bg-amber-50 text-amber-700 border-amber-300',
-  giris_tamam: 'bg-green-50 text-green-700 border-green-300',
-  derste:      'bg-green-50 text-green-700 border-green-300',
-  cikis_eksik: 'bg-orange-50 text-orange-600 border-orange-200',
-  erken_cikis: 'bg-purple-50 text-purple-700 border-purple-300',
-  tamamlandi:  'bg-green-100 text-green-700 border-green-300',
-  bkds_muaf:   'bg-blue-50 text-blue-600 border-blue-200',
-};
+/* ─── Ana panel ────────────────────────────────────────────────────────── */
 
 interface OgrenciPaneliProps {
   rows: OgrenciRow[];
@@ -115,10 +192,6 @@ export function OgrenciPaneli({ rows, filter, colorblind = false, onDelete }: Og
   const { saatGruplari, muaflar } = groupBySaat(filtered, now);
   const toggle = (key: string) => setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
 
-  const oncelikliGruplar = saatGruplari.filter(g => ['aktif', 'yaklasan_40'].includes(g.zamanGrubu));
-  const yanYana = oncelikliGruplar.slice(0, 2);
-  const yanYanaKeys = new Set(yanYana.map(g => `saat-${g.saat}`));
-
   return (
     <div>
       <div className="flex justify-end px-4 py-2 border-b border-gray-100 bg-gray-50">
@@ -131,265 +204,191 @@ export function OgrenciPaneli({ rows, filter, colorblind = false, onDelete }: Og
         </button>
       </div>
 
-      {yanYana.length > 0 && (
-        <div className={cn('grid border-b border-gray-200', yanYana.length === 2 ? 'grid-cols-2' : 'grid-cols-1')}>
-          {yanYana.map(({ saat, satirlar, zamanGrubu }) => {
-            const stil = ZAMAN_STIL[zamanGrubu];
-            const sorunlu = satirlar.filter(r => ['kritik','giris_eksik','gecikiyor','erken_cikis'].includes(r.status)).length;
-            const tamam = satirlar.filter(r => ['tamamlandi','derste','giris_tamam'].includes(r.status)).length;
+      {/* Saat saat kart grupları */}
+      <div>
+        {saatGruplari.map(({ saat, satirlar, zamanGrubu }) => {
+          const stil = ZAMAN_STIL[zamanGrubu];
+          const key = `saat-${saat}`;
+          const isOpen = !(collapsed[key] ?? zamanGrubu === 'gecmis');
+          const sorunlu = satirlar.filter(r => ['kritik','giris_eksik','gecikiyor','erken_cikis'].includes(r.status)).length;
+          const tamam = satirlar.filter(r => ['tamamlandi','derste','giris_tamam'].includes(r.status)).length;
 
-            return (
-              <div key={`yy-${saat}`} className="border-r border-gray-200 last:border-r-0">
-                <div className={cn('flex items-center gap-2 px-4 py-2.5', stil.header)}>
-                  <span className="relative flex h-3 w-3 shrink-0">
-                    {stil.pingAnim && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-60" />}
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-white opacity-80" />
-                  </span>
-                  <span className="text-lg font-bold tabular-nums">{saat}</span>
-                  <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full border', stil.badge)}>
-                    {ZAMAN_LABEL[zamanGrubu]}
-                  </span>
-                  <span className="text-sm opacity-80 ml-1">{satirlar.length} ders</span>
-                  {sorunlu > 0 && (
-                    <span className="flex items-center gap-1 bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full ml-auto">
-                      <AlertTriangle className="w-3 h-3" />{sorunlu}
-                    </span>
-                  )}
-                  {tamam > 0 && sorunlu === 0 && (
-                    <span className="flex items-center gap-1 bg-white/20 text-white text-xs px-2 py-0.5 rounded-full ml-auto">
-                      <CheckCircle2 className="w-3 h-3" />{tamam}
-                    </span>
-                  )}
-                </div>
-                <OgrenciTable satirlar={satirlar} derslikGizli={derslikGizli} kompakt
-                  colorblind={colorblind} onDelete={onDelete} />
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="divide-y divide-gray-100">
-        {saatGruplari
-          .filter(g => !yanYanaKeys.has(`saat-${g.saat}`))
-          .map(({ saat, satirlar, zamanGrubu }) => {
-            const stil = ZAMAN_STIL[zamanGrubu];
-            const key = `saat-${saat}`;
-            const isOpen = !(collapsed[key] ?? zamanGrubu === 'gecmis');
-            const sorunlu = satirlar.filter(r => ['kritik','giris_eksik','gecikiyor','erken_cikis'].includes(r.status)).length;
-            const tamam = satirlar.filter(r => ['tamamlandi','derste','giris_tamam'].includes(r.status)).length;
-
-            return (
-              <div key={key}>
-                <button onClick={() => toggle(key)} className={cn('w-full flex items-center gap-3 px-4 py-2.5 text-left transition-all hover:opacity-90', stil.header)}>
-                  <span className="relative flex h-3 w-3 shrink-0">
-                    {stil.pingAnim && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-60" />}
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-white opacity-80" />
-                  </span>
-                  <span className="text-lg font-bold tabular-nums">{saat}</span>
-                  <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full border', stil.badge)}>
-                    {ZAMAN_LABEL[zamanGrubu]}
-                  </span>
-                  <span className="text-sm opacity-80">{satirlar.length} ders</span>
-                  {sorunlu > 0 && (
-                    <span className="flex items-center gap-1 bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                      <AlertTriangle className="w-3 h-3" />{sorunlu} sorun
-                    </span>
-                  )}
-                  {tamam > 0 && (
-                    <span className="flex items-center gap-1 bg-white/20 text-white text-xs px-2 py-0.5 rounded-full">
-                      <CheckCircle2 className="w-3 h-3" />{tamam} tamam
-                    </span>
-                  )}
-                  <span className="ml-auto opacity-70">
-                    {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  </span>
-                </button>
-                {isOpen && (
-                  <OgrenciTable satirlar={satirlar} derslikGizli={derslikGizli}
-                    colorblind={colorblind} onDelete={onDelete} />
+          return (
+            <section key={key} className="border-t-4 border-gray-100 first:border-t-0">
+              {/* Saat başlığı — net ayırım için kalın renkli band */}
+              <button
+                onClick={() => toggle(key)}
+                className={cn(
+                  'w-full flex items-center gap-3 px-5 py-3 text-left transition-all hover:brightness-95',
+                  'bg-gradient-to-r shadow-sm',
+                  stil.bar,
                 )}
-              </div>
-            );
-          })}
+              >
+                <span className="relative flex h-3 w-3 shrink-0">
+                  {stil.pingAnim && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-60" />}
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-white opacity-90" />
+                </span>
+                <span className="text-2xl font-black tabular-nums tracking-tight">{saat}</span>
+                <span className={cn('text-[11px] font-bold px-2.5 py-1 rounded-full shadow-sm', stil.badge)}>
+                  {stil.label}
+                </span>
+                <span className="text-sm font-semibold opacity-90">{satirlar.length} ders</span>
+                {sorunlu > 0 && (
+                  <span className="flex items-center gap-1 bg-black/25 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                    <AlertTriangle className="w-3 h-3" />{sorunlu} sorun
+                  </span>
+                )}
+                {tamam > 0 && (
+                  <span className="flex items-center gap-1 bg-black/25 text-white text-xs px-2 py-0.5 rounded-full">
+                    <CheckCircle2 className="w-3 h-3" />{tamam} tamam
+                  </span>
+                )}
+                <span className="ml-auto opacity-80">
+                  {isOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                </span>
+              </button>
 
+              {isOpen && (
+                <div className="p-3 bg-gray-50">
+                  <div className="grid gap-2.5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+                    {satirlar.map(row => (
+                      <OgrenciKart
+                        key={row.id}
+                        row={row}
+                        derslikGizli={derslikGizli}
+                        colorblind={colorblind}
+                        onDelete={onDelete}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          );
+        })}
+
+        {/* BKDS Muaf */}
         {muaflar.length > 0 && (
-          <div>
-            <button onClick={() => toggle('muaf')} className="w-full flex items-center gap-3 px-4 py-2.5 text-left bg-blue-50 border-b border-blue-100 hover:bg-blue-100 transition-colors">
-              <Shield className="w-4 h-4 text-blue-500 shrink-0" />
-              <span className="text-sm font-bold text-blue-700">Evde Destek Eğitim</span>
-              <span className="text-xs bg-blue-100 text-blue-600 border border-blue-200 px-2 py-0.5 rounded-full">
+          <section className="border-t-4 border-gray-100">
+            <button onClick={() => toggle('muaf')}
+              className="w-full flex items-center gap-3 px-5 py-3 text-left bg-blue-50 hover:bg-blue-100 transition-colors">
+              <Shield className="w-5 h-5 text-blue-500 shrink-0" />
+              <span className="text-lg font-bold text-blue-700">Evde Destek Eğitim</span>
+              <span className="text-xs bg-blue-100 text-blue-600 border border-blue-200 px-2 py-0.5 rounded-full font-semibold">
                 BKDS Muaf · {muaflar.length}
               </span>
               <span className="ml-auto text-blue-400">
-                {collapsed['muaf'] ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                {collapsed['muaf'] ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
               </span>
             </button>
             {!collapsed['muaf'] && (
-              <OgrenciTable satirlar={muaflar} derslikGizli={derslikGizli}
-                colorblind={colorblind} onDelete={onDelete} faded />
+              <div className="p-3 bg-gray-50 opacity-80">
+                <div className="grid gap-2.5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+                  {muaflar.map(row => (
+                    <OgrenciKart
+                      key={row.id}
+                      row={row}
+                      derslikGizli={derslikGizli}
+                      colorblind={colorblind}
+                      onDelete={onDelete}
+                    />
+                  ))}
+                </div>
+              </div>
             )}
-          </div>
+          </section>
         )}
       </div>
     </div>
   );
 }
 
-function OgrenciTable({
-  satirlar, derslikGizli, kompakt = false, colorblind = false, faded = false, onDelete,
-}: {
-  satirlar: OgrenciRow[];
-  derslikGizli: boolean;
-  kompakt?: boolean;
-  colorblind?: boolean;
-  faded?: boolean;
-  onDelete?: (lessonSessionId: string, ogrenciAdi: string) => void;
-}) {
-  const px = kompakt ? 'px-3' : 'px-4';
-  return (
-    <table className={cn('w-full text-sm', faded && 'opacity-70')}>
-      <thead>
-        <tr className="text-xs border-b border-gray-100 bg-gray-50/50">
-          <th className={cn('text-left py-2 font-medium text-gray-400 uppercase tracking-wide', px)}>Ad Soyad</th>
-          <th className={cn('text-left py-2 font-medium text-gray-400 uppercase tracking-wide', px)}>Giriş</th>
-          <th className={cn('text-left py-2 font-medium text-gray-400 uppercase tracking-wide', px)}>Çıkış</th>
-          {!kompakt && <th className={cn('text-left py-2 font-medium text-gray-400 uppercase tracking-wide', px)}>Bitiş</th>}
-          {!derslikGizli && <th className={cn('text-left py-2 font-medium text-gray-400 uppercase tracking-wide', px)}>Derslik</th>}
-          <th className={cn('text-left py-2 font-medium text-gray-400 uppercase tracking-wide', px)}>Durum</th>
-          {onDelete && <th className="w-10"></th>}
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-gray-50">
-        {satirlar.map(row => (
-          <OgrenciSatir key={row.id} row={row} derslikGizli={derslikGizli}
-            kompakt={kompakt} colorblind={colorblind} onDelete={onDelete} />
-        ))}
-      </tbody>
-    </table>
-  );
-}
+/* ─── Tek kart ─────────────────────────────────────────────────────────── */
 
-function OgrenciSatir({
-  row, derslikGizli, kompakt = false, colorblind = false, onDelete,
+function OgrenciKart({
+  row, derslikGizli, colorblind, onDelete,
 }: {
   row: OgrenciRow;
   derslikGizli: boolean;
-  kompakt?: boolean;
-  colorblind?: boolean;
+  colorblind: boolean;
   onDelete?: (lessonSessionId: string, ogrenciAdi: string) => void;
 }) {
-  const px = kompakt ? 'px-3' : 'px-4';
+  const stil = getCardStyle(row);
+  const Icon = stil.icon;
   const girisYapti = !!row.gercekGiris;
   const legend = LEGEND_MAP()[row.status];
-  const LegendIcon = legend?.icon;
 
   return (
-    <tr className={cn(
-      'hover:bg-gray-50 transition-colors border-l-4',
-      // Sol kenar rengi: giriş yapan = yeşil; kritik/giris_eksik = kırmızı; erken çıkış = mor; yoksa şeffaf
-      girisYapti && row.status !== 'erken_cikis' && 'border-green-500',
-      !girisYapti && ['kritik','giris_eksik'].includes(row.status) && 'border-red-500',
-      !girisYapti && row.status === 'gecikiyor' && 'border-yellow-500',
-      row.status === 'erken_cikis' && 'border-purple-500',
-      !girisYapti && !['kritik','giris_eksik','gecikiyor','erken_cikis'].includes(row.status) && 'border-transparent',
-      // Zemin
-      girisYapti && !['erken_cikis'].includes(row.status) && 'bg-green-50/40',
-      ['kritik','giris_eksik'].includes(row.status) && 'bg-red-50/50',
-      ['gecikiyor','cikis_eksik'].includes(row.status) && 'bg-yellow-50/40',
-      row.status === 'erken_cikis' && 'bg-purple-50/40',
-      row.status === 'tamamlandi' && 'opacity-70',
+    <div className={cn(
+      'relative rounded-xl shadow-sm overflow-hidden group flex flex-col',
+      stil.card,
+      colorblind && 'ring-2 ring-black/30',
+      girisYapti && 'ring-2 ring-emerald-400 ring-offset-1',
+      row.status === 'kritik' && 'animate-blink',
     )}>
-      <td className={cn(px, 'py-2.5')}>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {girisYapti && <UserCheck className="w-4 h-4 text-green-600 shrink-0" />}
-          <span className="font-semibold text-gray-900 text-sm">{row.ogrenciAdi}</span>
-          {row.gelmediUyari && (
-            <span className="inline-flex items-center gap-0.5 text-xs bg-red-100 text-red-700 border border-red-300 px-1.5 py-0.5 rounded-full">
-              <AlertTriangle className="w-3 h-3" />!
-            </span>
-          )}
-          {row.erkenCikisUyari && (
-            <span className="inline-flex items-center gap-0.5 text-xs bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.5 rounded-full">
-              <LogOut className="w-3 h-3" />Erken
-            </span>
-          )}
-        </div>
-        <p className="text-xs text-gray-400 mt-0.5">
-          {formatTime(row.baslangic)} · {row.ogretmenAdi}
-        </p>
-      </td>
-
-      {/* Giriş — kendi sütunu */}
-      <td className={cn(px, 'py-2.5 w-24')}>
-        {row.gercekGiris ? (
-          <div className="flex items-center gap-1">
-            <UserCheck className="w-3.5 h-3.5 text-green-500 shrink-0" />
-            <span className="text-green-700 font-bold tabular-nums text-sm">{formatTime(row.gercekGiris)}</span>
-          </div>
-        ) : <span className="text-gray-200 text-sm">—</span>}
-      </td>
-
-      {/* Çıkış — kendi sütunu */}
-      <td className={cn(px, 'py-2.5 w-24')}>
-        {row.gercekCikis ? (
-          <div className="flex items-center gap-1">
-            <LogOut className="w-3.5 h-3.5 text-orange-400 shrink-0" />
-            <span className={cn('font-bold tabular-nums text-sm', row.erkenCikisUyari ? 'text-purple-600' : 'text-orange-500')}>
-              {formatTime(row.gercekCikis)}
-            </span>
-          </div>
-        ) : row.gercekGiris ? (
-          <span className="text-xs text-green-500 italic">İçeride</span>
-        ) : <span className="text-gray-200 text-sm">—</span>}
-      </td>
-
-      {!kompakt && (
-        <td className={cn(px, 'py-2.5 w-16 text-xs text-gray-400 tabular-nums')}>
-          {formatTime(row.bitis)}
-        </td>
-      )}
-
-      {!derslikGizli && (
-        <td className={cn(px, 'py-2.5')}>
-          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-md whitespace-nowrap">{row.derslik}</span>
-        </td>
-      )}
-
-      <td className={cn(px, 'py-2.5')}>
-        <span className={cn(
-          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold border',
-          STATUS_STIL[row.status] ?? STATUS_STIL.bekleniyor,
-          row.status === 'kritik' && 'animate-blink',
-        )}>
-          {colorblind && legend && LegendIcon && (
-            <>
-              <span className="font-bold">{legend.symbol}</span>
-              <LegendIcon className="w-3 h-3" />
-            </>
-          )}
-          {row.statusLabel}
-        </span>
-      </td>
-
-      {onDelete && (
-        <td className={cn(px, 'py-2.5 w-10')}>
+      {/* Üst şerit: durum ikonu + etiketi */}
+      <div className={cn('flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold', stil.header)}>
+        <Icon className="w-3.5 h-3.5 shrink-0" />
+        <span>{stil.label}</span>
+        {colorblind && legend?.symbol && (
+          <span className="ml-1 font-black opacity-90">{legend.symbol}</span>
+        )}
+        {row.gelmediUyari && (
+          <AlertTriangle className="w-3.5 h-3.5 ml-auto animate-pulse" />
+        )}
+        {onDelete && (
           <button
             onClick={() => {
               if (confirm(`${row.ogrenciAdi} dersini silmek istediğinize emin misiniz?`)) {
                 onDelete(row.lessonSessionId, row.ogrenciAdi);
               }
             }}
-            className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+            className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/20 rounded p-0.5"
             title="Dersi sil"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
-        </td>
-      )}
-    </tr>
+        )}
+      </div>
+
+      {/* Gövde */}
+      <div className="flex-1 px-3 py-2.5 flex flex-col gap-0.5 min-w-0">
+        <p className="font-bold text-sm uppercase tracking-tight leading-tight truncate" title={row.ogrenciAdi}>
+          {row.ogrenciAdi}
+        </p>
+        <p className="text-[11px] opacity-80 truncate" title={row.ogretmenAdi}>
+          {row.ogretmenAdi}
+        </p>
+        {!derslikGizli && (
+          <p className="text-[11px] opacity-70 truncate" title={row.derslik}>
+            {row.derslik}
+          </p>
+        )}
+      </div>
+
+      {/* Alt: saat aralığı + giriş/çıkış */}
+      <div className="px-3 py-1.5 bg-black/15 text-[11px] font-semibold flex items-center gap-2 flex-wrap">
+        <span className="tabular-nums">
+          {formatTime(row.baslangic)} – {formatTime(row.bitis)}
+        </span>
+        {row.gercekGiris && (
+          <span className="inline-flex items-center gap-0.5 tabular-nums ml-auto">
+            <UserCheck className="w-3 h-3" />
+            {formatTime(row.gercekGiris)}
+          </span>
+        )}
+        {row.gercekCikis && (
+          <span className="inline-flex items-center gap-0.5 tabular-nums">
+            <LogOut className="w-3 h-3" />
+            {formatTime(row.gercekCikis)}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
+
+/* ─── Durum filtre bar ─────────────────────────────────────────────────── */
 
 const STATUS_GROUPS = [
   { key: 'kritik',      label: 'Kritik',       color: 'bg-red-600' },
