@@ -250,21 +250,6 @@ export default function CanliPage() {
             Ders Ekle
           </button>
 
-          {/* Bildirimler butonu — sayaç rozeti */}
-          <button
-            onClick={() => setDrawerOpen(true)}
-            className="relative flex items-center gap-1.5 border border-gray-200 hover:border-gray-400 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg px-3 py-1.5 transition-colors"
-            title="Bildirimler"
-          >
-            <Bell className="w-4 h-4" />
-            Bildirimler
-            {okunmamisSayisi > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-red-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-md">
-                {okunmamisSayisi}
-              </span>
-            )}
-          </button>
-
           {/* Fullscreen */}
           <button
             onClick={toggleFullscreen}
@@ -280,6 +265,30 @@ export default function CanliPage() {
             {error ? <WifiOff className="w-3.5 h-3.5" /> : <Wifi className="w-3.5 h-3.5" />}
             {error ? 'Bağlantı Hatası' : 'Canlı · 5s'}
           </div>
+
+          {/* Bildirimler butonu — Canlı · 5s yanında, okunmamış sayısı inline */}
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className={cn(
+              'flex items-center gap-1.5 text-sm font-medium rounded-lg px-3 py-1.5 border transition-colors',
+              okunmamisSayisi > 0
+                ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100'
+                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-400',
+            )}
+            title="Bildirimler"
+          >
+            <Bell className={cn('w-4 h-4', okunmamisSayisi > 0 && 'animate-pulse')} />
+            Bildirimler
+            <span className={cn(
+              'inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 text-xs font-bold rounded-full tabular-nums',
+              okunmamisSayisi > 0
+                ? 'bg-red-600 text-white'
+                : 'bg-gray-200 text-gray-600',
+            )}>
+              {okunmamisSayisi}
+            </span>
+          </button>
+
           <button onClick={refresh} disabled={loading}
             className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors disabled:opacity-40">
             <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />

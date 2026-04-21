@@ -1,10 +1,12 @@
 'use client';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import {
   LayoutDashboard, Monitor, Users,
   Upload, FileBarChart, Settings, LogOut, Activity, Tv2,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -18,57 +20,95 @@ const navItems = [
   { href: '/ayarlar', label: 'Ayarlar', icon: Settings },
 ];
 
+const SIDEBAR_KEY = 'sidebar-collapsed';
+
 export function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const [collapsed, setCollapsed] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    setCollapsed(localStorage.getItem(SIDEBAR_KEY) === '1');
+  }, []);
+
+  useEffect(() => {
+    if (mounted) localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0');
+  }, [collapsed, mounted]);
 
   return (
-    <aside className="flex flex-col w-60 min-h-screen bg-slate-900 text-slate-100">
-      {/* Logo */}
-      <div className="px-6 py-5 border-b border-slate-700">
-        <div className="flex items-center gap-2">
-          <Activity className="w-6 h-6 text-blue-400" />
-          <div>
-            <p className="font-bold text-sm leading-tight">BKDS Takip</p>
-            <p className="text-xs text-slate-400">Rehab Merkezi</p>
-          </div>
+    <>
+      {/* Açık sidebar */}
+      <aside className={cn(
+        'flex flex-col min-h-screen bg-slate-900 text-slate-100 transition-[width] duration-200 ease-out shrink-0',
+        collapsed ? 'w-14' : 'w-60',
+      )}>
+        {/* Logo + collapse butonu */}
+        <div className="px-3 py-4 border-b border-slate-700 flex items-center gap-2">
+          <Activity className="w-6 h-6 text-blue-400 shrink-0" />
+          {!collapsed && (
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-sm leading-tight truncate">BKDS Takip</p>
+              <p className="text-xs text-slate-400 truncate">Rehab Merkezi</p>
+            </div>
+          )}
+          <button
+            onClick={() => setCollapsed(v => !v)}
+            className="ml-auto p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors shrink-0"
+            title={collapsed ? 'Menüyü aç' : 'Menüyü daralt'}
+            aria-pressed={collapsed}
+          >
+            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+          </button>
         </div>
-      </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
-        {navItems.map(({ href, label, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
+        {/* Nav */}
+        <nav className="flex-1 px-2 py-4 space-y-1">
+          {navItems.map(({ href, label, icon: Icon }) => {
+            const active = pathname === href || pathname.startsWith(href + '/');
+            return (
+              <Link
+                key={href}
+                href={href}
+                title={collapsed ? label : undefined}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                  collapsed && 'justify-center px-2',
+                  active
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                )}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                {!collapsed && <span className="truncate">{label}</span>}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* User + Logout */}
+        <div className="px-2 py-4 border-t border-slate-700">
+          {!collapsed && (
+            <div className="px-3 py-2 text-xs text-slate-400 truncate mb-2">
+              {session?.user?.name}
+              <br />
+              <span className="text-slate-500">{(session?.user as any)?.role}</span>
+            </div>
+          )}
+          <button
+            onClick={() => signOut({ callbackUrl: '/giris' })}
+            title={collapsed ? 'Çıkış Yap' : undefined}
             className={cn(
-              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-              pathname === href || pathname.startsWith(href + '/')
-                ? 'bg-blue-600 text-white'
-                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800 hover:text-white w-full transition-colors',
+              collapsed && 'justify-center px-2',
             )}
           >
-            <Icon className="w-4 h-4 shrink-0" />
-            {label}
-          </Link>
-        ))}
-      </nav>
-
-      {/* User + Logout */}
-      <div className="px-3 py-4 border-t border-slate-700">
-        <div className="px-3 py-2 text-xs text-slate-400 truncate mb-2">
-          {session?.user?.name}
-          <br />
-          <span className="text-slate-500">{(session?.user as any)?.role}</span>
+            <LogOut className="w-4 h-4 shrink-0" />
+            {!collapsed && 'Çıkış Yap'}
+          </button>
         </div>
-        <button
-          onClick={() => signOut({ callbackUrl: '/giris' })}
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800 hover:text-white w-full transition-colors"
-        >
-          <LogOut className="w-4 h-4" />
-          Çıkış Yap
-        </button>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }
