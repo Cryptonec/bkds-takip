@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useLiveAttendance } from '@/lib/hooks/useLiveAttendance';
 import { OgrenciPaneli, StatusSummaryBar } from '@/components/canli/OgrenciPaneli';
 import { PersonelPaneli } from '@/components/canli/PersonelPaneli';
@@ -7,10 +7,15 @@ import { BildirimPanel } from '@/components/canli/BildirimPanel';
 import { ColorLegend } from '@/components/canli/ColorLegend';
 import { TumBildirimler } from '@/components/canli/TumBildirimler';
 import { DersEkleModal } from '@/components/canli/DersEkleModal';
-import { RefreshCw, Wifi, WifiOff, AlertTriangle, LogOut, UserCheck, GraduationCap, Plus } from 'lucide-react';
+import {
+  RefreshCw, Wifi, WifiOff, AlertTriangle, LogOut, UserCheck, GraduationCap, Plus,
+  Bell, Maximize2, Minimize2, X,
+} from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
 
 const COLORBLIND_KEY = 'canli-colorblind';
+const BILDIRIM_READ_KEY = 'canli-bildirim-read';
+const BILDIRIM_DELETED_KEY = 'canli-bildirim-deleted';
 
 function SaatSayaci({ lastUpdated }: { lastUpdated: Date | null }) {
   const [saat, setSaat] = useState('');
@@ -44,11 +49,28 @@ function SaatSayaci({ lastUpdated }: { lastUpdated: Date | null }) {
   );
 }
 
+function loadSet(key: string): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(key);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch { return new Set(); }
+}
+
+function saveSet(key: string, s: Set<string>) {
+  localStorage.setItem(key, JSON.stringify([...s]));
+}
+
 export default function CanliPage() {
   const [activeTab, setActiveTab] = useState<'ogrenci' | 'personel'>('ogrenci');
   const [ogrenciFilter, setOgrenciFilter] = useState('hepsi');
   const [colorblind, setColorblind] = useState(false);
   const [dersEkleOpen, setDersEkleOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+
   const {
     data, loading, error, lastUpdated, refresh,
     yeniBildirimler, dismissBildirim,
@@ -59,11 +81,27 @@ export default function CanliPage() {
   useEffect(() => {
     const v = localStorage.getItem(COLORBLIND_KEY);
     if (v === '1') setColorblind(true);
+    setReadIds(loadSet(BILDIRIM_READ_KEY));
+    setDeletedIds(loadSet(BILDIRIM_DELETED_KEY));
   }, []);
 
   useEffect(() => {
     localStorage.setItem(COLORBLIND_KEY, colorblind ? '1' : '0');
   }, [colorblind]);
+
+  useEffect(() => {
+    const onFs = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
+
+  async function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      await document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      await document.exitFullscreen().catch(() => {});
+    }
+  }
 
   async function handleDeleteLesson(lessonSessionId: string, ogrenciAdi: string) {
     try {
@@ -79,6 +117,44 @@ export default function CanliPage() {
     }
   }
 
+  // Silinmişleri dışarda bırak
+  const gorunurBildirimler = useMemo(
+    () => (data?.bildirimler ?? []).filter(b => !deletedIds.has(b.id)),
+    [data?.bildirimler, deletedIds],
+  );
+  const okunmamisSayisi = gorunurBildirimler.filter(b => !readIds.has(b.id)).length;
+
+  function markRead(id: string) {
+    setReadIds(prev => {
+      const next = new Set(prev); next.add(id);
+      saveSet(BILDIRIM_READ_KEY, next);
+      return next;
+    });
+  }
+  function markAllRead() {
+    setReadIds(prev => {
+      const next = new Set(prev);
+      gorunurBildirimler.forEach(b => next.add(b.id));
+      saveSet(BILDIRIM_READ_KEY, next);
+      return next;
+    });
+  }
+  function deleteBildirim(id: string) {
+    setDeletedIds(prev => {
+      const next = new Set(prev); next.add(id);
+      saveSet(BILDIRIM_DELETED_KEY, next);
+      return next;
+    });
+  }
+  function clearAllBildirim() {
+    setDeletedIds(prev => {
+      const next = new Set(prev);
+      gorunurBildirimler.forEach(b => next.add(b.id));
+      saveSet(BILDIRIM_DELETED_KEY, next);
+      return next;
+    });
+  }
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       <BildirimPanel bildirimler={yeniBildirimler} onDismiss={dismissBildirim} />
@@ -91,7 +167,7 @@ export default function CanliPage() {
               <UserCheck className="w-5 h-5 shrink-0" />
               <div>
                 <p className="font-bold">{r.ogrenciAdi}</p>
-                <p className="text-xs text-green-100">✅ Öğrenci Girişi · {r.derslik ?? ''} · {formatTime((r as any).gercekGiris ?? (r as any).ilkGiris)}</p>
+                <p className="text-xs text-green-100">Öğrenci Girişi · {r.derslik ?? ''} · {formatTime((r as any).gercekGiris ?? (r as any).ilkGiris)}</p>
               </div>
             </div>
           ))}
@@ -107,7 +183,7 @@ export default function CanliPage() {
               <LogOut className="w-5 h-5 shrink-0" />
               <div>
                 <p className="font-bold">{r.ogrenciAdi}</p>
-                <p className="text-xs text-orange-100">👋 Öğrenci Çıkışı · {r.derslik ?? ''} · {formatTime((r as any).gercekCikis ?? (r as any).sonCikis)}</p>
+                <p className="text-xs text-orange-100">Öğrenci Çıkışı · {r.derslik ?? ''} · {formatTime((r as any).gercekCikis ?? (r as any).sonCikis)}</p>
               </div>
             </div>
           ))}
@@ -122,7 +198,7 @@ export default function CanliPage() {
               <GraduationCap className="w-5 h-5 shrink-0" />
               <div>
                 <p className="font-bold">{r.ad}</p>
-                <p className="text-xs text-blue-100">👨‍🏫 Derse Başladı · {r.derslik ?? ''}</p>
+                <p className="text-xs text-blue-100">Derse Başladı · {r.derslik ?? ''}</p>
               </div>
             </div>
           ))}
@@ -138,7 +214,7 @@ export default function CanliPage() {
               <LogOut className="w-5 h-5 shrink-0" />
               <div>
                 <p className="font-bold">{r.ad}</p>
-                <p className="text-xs text-indigo-100">✅ Ders Tamamlandı · {r.derslik ?? ''}</p>
+                <p className="text-xs text-indigo-100">Ders Tamamlandı · {r.derslik ?? ''}</p>
               </div>
             </div>
           ))}
@@ -151,16 +227,16 @@ export default function CanliPage() {
         <div className="h-10 w-px bg-gray-200" />
 
         <div className="flex items-center gap-2 flex-1 flex-wrap">
-          {data && data.bildirimler.filter(b => b.tip === 'gelmedi').length > 0 && (
+          {gorunurBildirimler.filter(b => b.tip === 'gelmedi').length > 0 && (
             <div className="flex items-center gap-1.5 bg-red-50 border border-red-300 text-red-700 px-3 py-1.5 rounded-lg text-sm font-medium">
               <AlertTriangle className="w-4 h-4" />
-              {data.bildirimler.filter(b => b.tip === 'gelmedi').length} öğrenci gelmedi
+              {gorunurBildirimler.filter(b => b.tip === 'gelmedi').length} öğrenci gelmedi
             </div>
           )}
-          {data && data.bildirimler.filter(b => b.tip === 'erken_cikis').length > 0 && (
-            <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-300 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium">
+          {gorunurBildirimler.filter(b => b.tip === 'erken_cikis').length > 0 && (
+            <div className="flex items-center gap-1.5 bg-fuchsia-50 border border-fuchsia-300 text-fuchsia-700 px-3 py-1.5 rounded-lg text-sm font-medium">
               <LogOut className="w-4 h-4" />
-              {data.bildirimler.filter(b => b.tip === 'erken_cikis').length} erken çıkış
+              {gorunurBildirimler.filter(b => b.tip === 'erken_cikis').length} erken çıkış
             </div>
           )}
         </div>
@@ -173,6 +249,31 @@ export default function CanliPage() {
             <Plus className="w-4 h-4" />
             Ders Ekle
           </button>
+
+          {/* Bildirimler butonu — sayaç rozeti */}
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="relative flex items-center gap-1.5 border border-gray-200 hover:border-gray-400 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg px-3 py-1.5 transition-colors"
+            title="Bildirimler"
+          >
+            <Bell className="w-4 h-4" />
+            Bildirimler
+            {okunmamisSayisi > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-red-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-md">
+                {okunmamisSayisi}
+              </span>
+            )}
+          </button>
+
+          {/* Fullscreen */}
+          <button
+            onClick={toggleFullscreen}
+            className="flex items-center gap-1.5 border border-gray-200 hover:border-gray-400 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg px-3 py-1.5 transition-colors"
+            title={isFullscreen ? 'Tam ekrandan çık' : 'Tam ekran'}
+          >
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+
           <div className={cn('flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full font-medium',
             error ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50'
           )}>
@@ -188,13 +289,6 @@ export default function CanliPage() {
 
       {/* Renk legendi */}
       <ColorLegend colorblind={colorblind} onToggleColorblind={() => setColorblind(v => !v)} />
-
-      {/* Toplu bildirimler paneli */}
-      {data && data.bildirimler.length > 0 && (
-        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-          <TumBildirimler bildirimler={data.bildirimler} />
-        </div>
-      )}
 
       {/* Tabs */}
       <div className="bg-white border-b border-gray-200 px-6 shrink-0">
@@ -244,6 +338,41 @@ export default function CanliPage() {
         onClose={() => setDersEkleOpen(false)}
         onCreated={() => refresh()}
       />
+
+      {/* Bildirimler Drawer — sağdan kayan panel */}
+      {drawerOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/30 z-40"
+            onClick={() => setDrawerOpen(false)}
+          />
+          <aside className="fixed top-0 right-0 bottom-0 w-full max-w-md bg-white shadow-2xl z-50 flex flex-col animate-slide-in-right">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white shrink-0">
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Bell className="w-5 h-5 text-blue-600" />
+                Bildirim Merkezi
+              </h2>
+              <button
+                onClick={() => setDrawerOpen(false)}
+                className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
+                title="Kapat"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <TumBildirimler
+                bildirimler={gorunurBildirimler}
+                readIds={readIds}
+                onMarkRead={markRead}
+                onDelete={deleteBildirim}
+                onMarkAllRead={markAllRead}
+                onClearAll={clearAllBildirim}
+              />
+            </div>
+          </aside>
+        </>
+      )}
     </div>
   );
 }

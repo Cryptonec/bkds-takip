@@ -1,36 +1,41 @@
 'use client';
 import { cn } from '@/lib/utils';
 import {
-  AlertTriangle, LogOut, Clock, CheckCircle2, Users, Shield, UserCheck,
-  TimerReset,
+  AlertTriangle, LogOut, Clock, CheckCircle2, Users, Shield, XCircle,
+  Timer, PlayCircle, CalendarDays, TimerOff,
 } from 'lucide-react';
 
 export interface LegendItem {
   key: string;
   label: string;
-  colorClass: string;   // arka plan
-  textClass: string;    // metin
+  colorClass: string;   // kart + chip arka planı (tek kaynak)
+  textOnCard: string;   // kartın üzerindeki metin (text-white veya koyu)
+  textClass: string;    // legend ikon tint (renk körü modu)
   icon: React.ComponentType<{ className?: string }>;
-  symbol: string;       // renk körü modu için şekil/harf (▲ ■ ● ◆ vb.)
+  symbol: string;       // renk körü modu için sembol (▲ ■ ● ◆ vb.)
 }
 
+/**
+ * Okabe-Ito palette uyarlaması: renk körü kullanıcıların (deuteranopia,
+ * protanopia, tritanopia) ayırt edebilmesi için ton + parlaklık farkları.
+ * Bu palet hem ColorLegend'de hem de OgrenciPaneli kartlarında kullanılır.
+ */
 export const LEGEND: LegendItem[] = [
-  { key: 'kritik',      label: 'Kritik / Gelmedi',     colorClass: 'bg-red-500',    textClass: 'text-red-700',    icon: AlertTriangle, symbol: '■' },
-  { key: 'giris_eksik', label: 'Giriş Eksik',          colorClass: 'bg-orange-500', textClass: 'text-orange-700', icon: AlertTriangle, symbol: '▲' },
-  { key: 'erken_cikis', label: 'Erken Çıkış',          colorClass: 'bg-purple-500', textClass: 'text-purple-700', icon: LogOut,        symbol: '◆' },
-  { key: 'cikis_eksik', label: 'Çıkış Eksik',          colorClass: 'bg-orange-400', textClass: 'text-orange-600', icon: Clock,         symbol: '▼' },
-  { key: 'gecikiyor',   label: 'Gecikiyor',            colorClass: 'bg-yellow-500', textClass: 'text-yellow-700', icon: TimerReset,    symbol: '●' },
-  { key: 'gec_geldi',   label: 'Geç Geldi',            colorClass: 'bg-amber-400',  textClass: 'text-amber-700',  icon: Clock,         symbol: '◐' },
-  { key: 'derste',      label: 'Derste / Giriş Tamam', colorClass: 'bg-green-500',  textClass: 'text-green-700',  icon: UserCheck,     symbol: '✓' },
-  { key: 'tamamlandi',  label: 'Tamamlandı',           colorClass: 'bg-green-600',  textClass: 'text-green-700',  icon: CheckCircle2,  symbol: '✔' },
-  { key: 'bekleniyor',  label: 'Bekleniyor',           colorClass: 'bg-gray-400',   textClass: 'text-gray-600',   icon: Users,         symbol: '○' },
-  { key: 'bkds_muaf',   label: 'BKDS Muaf (Evde Destek)', colorClass: 'bg-blue-500', textClass: 'text-blue-700',  icon: Shield,        symbol: '◇' },
+  { key: 'kritik',      label: 'Kritik / Gelmedi',     colorClass: 'bg-red-700',     textOnCard: 'text-white',      textClass: 'text-red-700',     icon: XCircle,       symbol: '■' },
+  { key: 'giris_eksik', label: 'Giriş Eksik',          colorClass: 'bg-orange-500',  textOnCard: 'text-white',      textClass: 'text-orange-700',  icon: AlertTriangle, symbol: '▲' },
+  { key: 'gec_geldi',   label: 'Geç Geldi',            colorClass: 'bg-amber-700',   textOnCard: 'text-white',      textClass: 'text-amber-800',   icon: Clock,         symbol: '◐' },
+  { key: 'gecikiyor',   label: 'Gecikiyor',            colorClass: 'bg-yellow-300',  textOnCard: 'text-yellow-900', textClass: 'text-yellow-700',  icon: Timer,         symbol: '●' },
+  { key: 'derste',      label: 'Derste / Giriş Tamam', colorClass: 'bg-sky-500',     textOnCard: 'text-white',      textClass: 'text-sky-700',     icon: PlayCircle,    symbol: '✓' },
+  { key: 'tamamlandi',  label: 'Tamamlandı',           colorClass: 'bg-teal-600',    textOnCard: 'text-white',      textClass: 'text-teal-700',    icon: CheckCircle2,  symbol: '✔' },
+  { key: 'erken_cikis', label: 'Erken Çıkış',          colorClass: 'bg-pink-500',    textOnCard: 'text-white',      textClass: 'text-pink-700',    icon: LogOut,        symbol: '◆' },
+  { key: 'cikis_eksik', label: 'Çıkış Eksik',          colorClass: 'bg-fuchsia-700', textOnCard: 'text-white',      textClass: 'text-fuchsia-700', icon: TimerOff,      symbol: '▼' },
+  { key: 'bekleniyor',  label: 'Bekleniyor',           colorClass: 'bg-slate-500',   textOnCard: 'text-white',      textClass: 'text-slate-700',   icon: CalendarDays,  symbol: '○' },
+  { key: 'bkds_muaf',   label: 'BKDS Muaf',            colorClass: 'bg-indigo-500',  textOnCard: 'text-white',      textClass: 'text-indigo-700',  icon: Shield,        symbol: '◇' },
 ];
 
 export function LEGEND_MAP(): Record<string, LegendItem> {
   const m: Record<string, LegendItem> = {};
   for (const item of LEGEND) m[item.key] = item;
-  // giris_tamam → derste ile aynı
   m['giris_tamam'] = m['derste'];
   return m;
 }
@@ -51,7 +56,11 @@ export function ColorLegend({ colorblind, onToggleColorblind }: ColorLegendProps
             <div key={item.key}
               className="flex items-center gap-1.5 px-2 py-1 rounded-md border border-gray-200 bg-gray-50 text-xs"
               title={item.label}>
-              <span className={cn('inline-flex items-center justify-center w-4 h-4 rounded-sm text-white text-[10px] font-bold shrink-0', item.colorClass)}>
+              <span className={cn(
+                'inline-flex items-center justify-center w-4 h-4 rounded-sm text-[10px] font-bold shrink-0',
+                item.colorClass,
+                item.textOnCard,
+              )}>
                 {colorblind ? item.symbol : null}
               </span>
               {colorblind && <Icon className={cn('w-3 h-3', item.textClass)} />}

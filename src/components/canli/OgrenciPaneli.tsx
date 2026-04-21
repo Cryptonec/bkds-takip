@@ -5,8 +5,7 @@ import type { OgrenciRow } from '@/lib/hooks/useLiveAttendance';
 import { cn } from '@/lib/utils';
 import {
   AlertTriangle, CheckCircle2, Shield, ChevronDown, ChevronUp, UserCheck,
-  Eye, EyeOff, LogOut, Trash2, Clock, Timer, PlayCircle, XCircle,
-  CalendarDays, TimerOff, MinusCircle,
+  Eye, EyeOff, LogOut, Trash2,
 } from 'lucide-react';
 import { LEGEND_MAP } from './ColorLegend';
 
@@ -72,91 +71,28 @@ function groupBySaat(rows: OgrenciRow[], now: Date) {
   return { saatGruplari, muaflar };
 }
 
-/* ─── Kart stilleri: status → renk + ikon + etiket ─────────────────────── */
+/* ─── Kart stilleri: tek kaynak LEGEND_MAP ─────────────────────────────── */
 
 type CardStyle = {
-  card: string;     // kart ana rengi + arka plan
-  header: string;   // üst şerit bg
+  cardBg: string;     // tüm kart bg
+  textOnCard: string; // yazı kontrastı (text-white / text-yellow-900)
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  accent: string;   // sol border
+  symbol: string;
 };
 
 function getCardStyle(row: OgrenciRow): CardStyle {
+  const map = LEGEND_MAP();
   const hasGiris = !!row.gercekGiris;
-  switch (row.status) {
-    case 'bkds_muaf': return {
-      card: 'bg-gray-400 text-white',
-      header: 'bg-gray-500/80',
-      label: 'BKDS Muaf',
-      icon: MinusCircle,
-      accent: 'border-gray-300',
-    };
-    case 'tamamlandi': return {
-      card: 'bg-blue-600 text-white',
-      header: 'bg-blue-700/70',
-      label: 'Tamamlandı',
-      icon: CheckCircle2,
-      accent: 'border-blue-400',
-    };
-    case 'erken_cikis': return {
-      card: 'bg-violet-600 text-white',
-      header: 'bg-violet-700/70',
-      label: 'Erken Çıkış',
-      icon: LogOut,
-      accent: 'border-violet-400',
-    };
-    case 'cikis_eksik': return {
-      card: 'bg-purple-600 text-white',
-      header: 'bg-purple-700/70',
-      label: 'Çıkış Eksik',
-      icon: TimerOff,
-      accent: 'border-purple-400',
-    };
-    case 'gec_geldi': return {
-      card: 'bg-orange-500 text-white',
-      header: 'bg-orange-600/70',
-      label: 'Geç Geldi',
-      icon: Clock,
-      accent: 'border-orange-300',
-    };
-    case 'derste':
-    case 'giris_tamam': return {
-      card: 'bg-sky-600 text-white',
-      header: 'bg-sky-700/70',
-      label: 'Derste',
-      icon: PlayCircle,
-      accent: 'border-sky-400',
-    };
-    case 'kritik':
-    case 'giris_eksik': return {
-      card: 'bg-red-600 text-white',
-      header: 'bg-red-700/70',
-      label: row.status === 'kritik' ? 'Kritik!' : 'Giriş Eksik',
-      icon: XCircle,
-      accent: 'border-red-400',
-    };
-    case 'gecikiyor': return {
-      card: 'bg-amber-400 text-amber-900',
-      header: 'bg-amber-500/80 text-amber-900',
-      label: 'Gecikiyor',
-      icon: Timer,
-      accent: 'border-amber-500',
-    };
-  }
-  if (hasGiris) return {
-    card: 'bg-sky-600 text-white',
-    header: 'bg-sky-700/70',
-    label: 'Derste',
-    icon: PlayCircle,
-    accent: 'border-sky-400',
-  };
+  // Status yoksa veya bilinmiyorsa, giriş varsa "derste", yoksa "bekleniyor"
+  const key = map[row.status] ? row.status : hasGiris ? 'derste' : 'bekleniyor';
+  const item = map[key];
   return {
-    card: 'bg-slate-500 text-white',
-    header: 'bg-slate-600/70',
-    label: 'Planlandı',
-    icon: CalendarDays,
-    accent: 'border-slate-300',
+    cardBg: item.colorClass,
+    textOnCard: item.textOnCard,
+    label: row.statusLabel || item.label,
+    icon: item.icon,
+    symbol: item.symbol,
   };
 }
 
@@ -316,22 +252,22 @@ function OgrenciKart({
   const stil = getCardStyle(row);
   const Icon = stil.icon;
   const girisYapti = !!row.gercekGiris;
-  const legend = LEGEND_MAP()[row.status];
 
   return (
     <div className={cn(
       'relative rounded-xl shadow-sm overflow-hidden group flex flex-col',
-      stil.card,
-      colorblind && 'ring-2 ring-black/30',
+      stil.cardBg,
+      stil.textOnCard,
+      colorblind && 'ring-2 ring-black/40',
       girisYapti && 'ring-2 ring-emerald-400 ring-offset-1',
       row.status === 'kritik' && 'animate-blink',
     )}>
-      {/* Üst şerit: durum ikonu + etiketi */}
-      <div className={cn('flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold', stil.header)}>
+      {/* Üst şerit: durum ikonu + etiketi (kart renginin üzerine siyah katman) */}
+      <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-black/20">
         <Icon className="w-3.5 h-3.5 shrink-0" />
         <span>{stil.label}</span>
-        {colorblind && legend?.symbol && (
-          <span className="ml-1 font-black opacity-90">{legend.symbol}</span>
+        {colorblind && (
+          <span className="ml-1 font-black opacity-90">{stil.symbol}</span>
         )}
         {row.gelmediUyari && (
           <AlertTriangle className="w-3.5 h-3.5 ml-auto animate-pulse" />
@@ -343,7 +279,7 @@ function OgrenciKart({
                 onDelete(row.lessonSessionId, row.ogrenciAdi);
               }
             }}
-            className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/20 rounded p-0.5"
+            className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/30 rounded p-0.5"
             title="Dersi sil"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -356,18 +292,18 @@ function OgrenciKart({
         <p className="font-bold text-sm uppercase tracking-tight leading-tight truncate" title={row.ogrenciAdi}>
           {row.ogrenciAdi}
         </p>
-        <p className="text-[11px] opacity-80 truncate" title={row.ogretmenAdi}>
+        <p className="text-[11px] opacity-85 truncate" title={row.ogretmenAdi}>
           {row.ogretmenAdi}
         </p>
         {!derslikGizli && (
-          <p className="text-[11px] opacity-70 truncate" title={row.derslik}>
+          <p className="text-[11px] opacity-75 truncate" title={row.derslik}>
             {row.derslik}
           </p>
         )}
       </div>
 
       {/* Alt: saat aralığı + giriş/çıkış */}
-      <div className="px-3 py-1.5 bg-black/15 text-[11px] font-semibold flex items-center gap-2 flex-wrap">
+      <div className="px-3 py-1.5 bg-black/25 text-[11px] font-semibold flex items-center gap-2 flex-wrap">
         <span className="tabular-nums">
           {formatTime(row.baslangic)} – {formatTime(row.bitis)}
         </span>
