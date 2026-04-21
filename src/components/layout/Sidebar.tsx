@@ -41,11 +41,24 @@ export function Sidebar() {
     <>
       {/* Açık sidebar */}
       <aside className={cn(
-        'flex flex-col min-h-screen bg-slate-900 text-slate-100 transition-[width] duration-200 ease-out shrink-0',
+        'relative flex flex-col min-h-screen bg-slate-900 text-slate-100 transition-[width] duration-200 ease-out shrink-0',
         collapsed ? 'w-14' : 'w-60',
       )}>
-        {/* Logo + collapse butonu */}
-        <div className="px-3 py-4 border-b border-slate-700 flex items-center gap-2">
+        {/* Collapse butonu — sidebar kenarına yerleştirilmiş kalıcı görünür buton */}
+        <button
+          onClick={() => setCollapsed(v => !v)}
+          className="absolute -right-3 top-7 z-10 w-6 h-6 rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-lg border-2 border-slate-900 flex items-center justify-center transition-all hover:scale-110"
+          title={collapsed ? 'Menüyü aç' : 'Menüyü daralt'}
+          aria-pressed={collapsed}
+        >
+          {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+        </button>
+
+        {/* Logo */}
+        <div className={cn(
+          'py-4 border-b border-slate-700 flex items-center gap-2',
+          collapsed ? 'px-3 justify-center' : 'px-3',
+        )}>
           <Activity className="w-6 h-6 text-blue-400 shrink-0" />
           {!collapsed && (
             <div className="flex-1 min-w-0">
@@ -53,14 +66,6 @@ export function Sidebar() {
               <p className="text-xs text-slate-400 truncate">Rehab Merkezi</p>
             </div>
           )}
-          <button
-            onClick={() => setCollapsed(v => !v)}
-            className="ml-auto p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors shrink-0"
-            title={collapsed ? 'Menüyü aç' : 'Menüyü daralt'}
-            aria-pressed={collapsed}
-          >
-            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          </button>
         </div>
 
         {/* Nav */}

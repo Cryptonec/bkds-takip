@@ -252,6 +252,7 @@ function OgrenciKart({
   const stil = getCardStyle(row);
   const Icon = stil.icon;
   const girisYapti = !!row.gercekGiris;
+  const [confirmSil, setConfirmSil] = useState(false);
 
   return (
     <div className={cn(
@@ -269,21 +270,38 @@ function OgrenciKart({
         {colorblind && (
           <span className="ml-1 font-black opacity-90">{stil.symbol}</span>
         )}
-        {row.gelmediUyari && (
+        {row.gelmediUyari && !confirmSil && (
           <AlertTriangle className="w-3.5 h-3.5 ml-auto animate-pulse" />
         )}
-        {onDelete && (
+        {onDelete && !confirmSil && (
           <button
-            onClick={() => {
-              if (confirm(`${row.ogrenciAdi} dersini silmek istediğinize emin misiniz?`)) {
-                onDelete(row.lessonSessionId, row.ogrenciAdi);
-              }
-            }}
+            onClick={() => setConfirmSil(true)}
             className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/30 rounded p-0.5"
             title="Dersi sil"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
+        )}
+        {onDelete && confirmSil && (
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              onClick={() => {
+                onDelete(row.lessonSessionId, row.ogrenciAdi);
+                setConfirmSil(false);
+              }}
+              className="text-[10px] font-bold bg-white text-red-700 hover:bg-red-50 px-1.5 py-0.5 rounded"
+              title="Silmeyi onayla"
+            >
+              Sil
+            </button>
+            <button
+              onClick={() => setConfirmSil(false)}
+              className="text-[10px] font-bold bg-black/30 hover:bg-black/50 px-1.5 py-0.5 rounded"
+              title="İptal"
+            >
+              İptal
+            </button>
+          </div>
         )}
       </div>
 

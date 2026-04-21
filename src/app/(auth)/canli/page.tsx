@@ -70,6 +70,7 @@ export default function CanliPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+  const [errorToast, setErrorToast] = useState<string | null>(null);
 
   const {
     data, loading, error, lastUpdated, refresh,
@@ -103,17 +104,22 @@ export default function CanliPage() {
     }
   }
 
+  function showError(msg: string) {
+    setErrorToast(msg);
+    setTimeout(() => setErrorToast(null), 4000);
+  }
+
   async function handleDeleteLesson(lessonSessionId: string, ogrenciAdi: string) {
     try {
       const res = await fetch(`/api/lesson-sessions/${lessonSessionId}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(`Silinemedi: ${data.error ?? 'bilinmeyen hata'}`);
+        showError(`Silinemedi: ${data.error ?? 'bilinmeyen hata'}`);
         return;
       }
       await refresh();
     } catch {
-      alert(`${ogrenciAdi} dersi silinirken hata oluştu`);
+      showError(`${ogrenciAdi} dersi silinirken hata oluştu`);
     }
   }
 
@@ -158,6 +164,21 @@ export default function CanliPage() {
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       <BildirimPanel bildirimler={yeniBildirimler} onDismiss={dismissBildirim} />
+
+      {/* Hata toast — fullscreen-güvenli (alert/confirm kullanmaz) */}
+      {errorToast && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3 bg-red-600 text-white px-5 py-3 rounded-2xl shadow-2xl max-w-md">
+          <AlertTriangle className="w-5 h-5 shrink-0" />
+          <p className="text-sm font-medium flex-1">{errorToast}</p>
+          <button
+            onClick={() => setErrorToast(null)}
+            className="p-1 rounded hover:bg-white/20"
+            title="Kapat"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Öğrenci giriş toast */}
       {yeniGirisler.length > 0 && (
