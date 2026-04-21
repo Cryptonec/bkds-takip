@@ -77,7 +77,7 @@ export default function CanliPage() {
     yeniBildirimler, dismissBildirim,
     yeniGirisler, yeniCikislar,
     yeniPersonelGiris, yeniPersonelCikis,
-  } = useLiveAttendance(undefined, 5000);
+  } = useLiveAttendance(undefined, 1000);
 
   useEffect(() => {
     const v = localStorage.getItem(COLORBLIND_KEY);
@@ -284,7 +284,7 @@ export default function CanliPage() {
             error ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50'
           )}>
             {error ? <WifiOff className="w-3.5 h-3.5" /> : <Wifi className="w-3.5 h-3.5" />}
-            {error ? 'Bağlantı Hatası' : 'Canlı · 5s'}
+            {error ? 'Bağlantı Hatası' : 'Canlı · 1s'}
           </div>
 
           {/* Bildirimler butonu — Canlı · 5s yanında, okunmamış sayısı inline */}

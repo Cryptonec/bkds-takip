@@ -27,6 +27,7 @@ function speak(text: string) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   if (text.includes('*')) return; // Maskeli isim — söyleme
   try {
+    window.speechSynthesis.cancel();
     const utt = new SpeechSynthesisUtterance(toTurkishTitle(text));
     utt.lang = 'tr-TR';
     utt.rate = 0.9;
@@ -37,6 +38,12 @@ function speak(text: string) {
     if (trVoice) utt.voice = trVoice;
     window.speechSynthesis.speak(utt);
   } catch {}
+}
+
+function seslendir(kayit: Kayit) {
+  const onek = kayit.tur === 'personel' ? 'Sayın ' : '';
+  const son = kayit.tip === 'giris' ? ', hoş geldiniz' : ', güle güle';
+  speak(`${onek}${kayit.ad}${son}`);
 }
 
 function calarGiris() {
@@ -101,7 +108,7 @@ function useBildirimEkrani(sesAcik: boolean, max: number) {
     setGirisler(sorted);
     if (yeniKayit && sesAcikRef.current) {
       calarGiris();
-      setTimeout(() => speak(yeniKayit.ad), 250);
+      setTimeout(() => seslendir(yeniKayit), 400);
     }
   }
 
@@ -112,7 +119,7 @@ function useBildirimEkrani(sesAcik: boolean, max: number) {
     setCikislar(sorted);
     if (yeniKayit && sesAcikRef.current) {
       calarCikis();
-      setTimeout(() => speak(yeniKayit.ad), 250);
+      setTimeout(() => seslendir(yeniKayit), 400);
     }
   }
 

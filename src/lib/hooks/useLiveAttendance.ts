@@ -199,7 +199,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
           setYeniPersonelGiris(yeniPG);
           yeniPG.forEach(p => {
             playBeep('personel_giris');
-            setTimeout(() => speak(`${p.ad}, hoş geldiniz`), 400);
+            setTimeout(() => speak(`Sayın ${p.ad}, hoş geldiniz`), 400);
           });
           setTimeout(() => setYeniPersonelGiris([]), 5000);
         }
@@ -215,7 +215,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
           setYeniPersonelCikis(yeniPC);
           yeniPC.forEach(p => {
             playBeep('personel_cikis');
-            setTimeout(() => speak(`${p.ad}, güle güle`), 400);
+            setTimeout(() => speak(`Sayın ${p.ad}, güle güle`), 400);
           });
           setTimeout(() => setYeniPersonelCikis([]), 5000);
         }
