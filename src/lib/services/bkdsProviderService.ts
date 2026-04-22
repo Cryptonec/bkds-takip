@@ -154,14 +154,23 @@ export class BkdsProviderService {
     let page = 1;
     let hasMore = true;
 
+    // Yerel BRY: /api/activities/individual-activity/each-individual/ (city/district/rem yok)
+    // MEB public: /api/activity/daily-activity/each-individual/ (city/district/rem gerekli)
+    const isLocalBry = !/bkds-api\.meb\.gov\.tr/i.test(creds.apiUrl);
+    const activityPath = isLocalBry
+      ? '/api/activities/individual-activity/each-individual/'
+      : '/api/activity/daily-activity/each-individual/';
+
     while (hasMore) {
-      const url = new URL(`${creds.apiUrl}/api/activity/daily-activity/each-individual/`);
+      const url = new URL(`${creds.apiUrl}${activityPath}`);
       url.searchParams.set('page_size', '100');
       url.searchParams.set('ordering', '-first_entry');
       url.searchParams.set('page', String(page));
-      url.searchParams.set('city', creds.cityId);
-      url.searchParams.set('district', creds.districtId);
-      url.searchParams.set('rem', creds.remId);
+      if (!isLocalBry) {
+        if (creds.cityId)     url.searchParams.set('city', creds.cityId);
+        if (creds.districtId) url.searchParams.set('district', creds.districtId);
+        if (creds.remId)      url.searchParams.set('rem', creds.remId);
+      }
       url.searchParams.set('start_time', startTime);
       url.searchParams.set('end_time', endTime);
 
