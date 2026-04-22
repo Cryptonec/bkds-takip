@@ -45,10 +45,29 @@ export class BkdsProviderService {
     });
 
     if (dbCred) {
+      // Self-heal: eğer DB eski MEB public URL'sini tutuyor ama .env farklı
+      // bir URL'e (örn. kurum-içi BRY) işaret ediyorsa, env'i üstün tutup DB'yi güncelle.
+      const envUrl = process.env.BKDS_API_URL;
+      const dbLooksStale = /bkds-api\.meb\.gov\.tr/i.test(dbCred.apiUrl);
+      const envDiffers = envUrl && envUrl.trim() !== '' && envUrl !== dbCred.apiUrl;
+      let effectiveApiUrl = dbCred.apiUrl;
+      if (dbLooksStale && envDiffers) {
+        effectiveApiUrl = envUrl!;
+        try {
+          await prisma.bkdsCredential.update({
+            where: { organizationId: this.organizationId },
+            data: { apiUrl: effectiveApiUrl },
+          });
+          console.log(`[BKDS][${this.organizationId}] apiUrl migrate edildi: ${dbCred.apiUrl} → ${effectiveApiUrl}`);
+        } catch (e) {
+          console.warn(`[BKDS][${this.organizationId}] apiUrl migrate başarısız:`, e);
+        }
+      }
+
       this.creds = {
-        apiUrl: dbCred.apiUrl,
+        apiUrl: effectiveApiUrl,
         username: dbCred.username,
-        password: dbCred.password, // DB'de düz metin tutuyoruz (hassas değilse) veya şifreli
+        password: dbCred.password,
         cityId: dbCred.cityId,
         districtId: dbCred.districtId,
         remId: dbCred.remId,
@@ -56,7 +75,7 @@ export class BkdsProviderService {
     } else {
       // Geriye dönük uyumluluk: .env'den oku
       this.creds = {
-        apiUrl: process.env.BKDS_API_URL ?? 'https://bkds-api.meb.gov.tr',
+        apiUrl: process.env.BKDS_API_URL ?? 'http://192.168.1.154:3000',
         username: process.env.BKDS_USERNAME ?? '',
         password: process.env.BKDS_PASSWORD ?? '',
         cityId: process.env.BKDS_CITY_ID ?? '',
@@ -65,6 +84,7 @@ export class BkdsProviderService {
       };
     }
 
+    console.log(`[BKDS][${this.organizationId}] apiUrl=${this.creds.apiUrl}`);
     return this.creds;
   }
 
@@ -78,12 +98,21 @@ export class BkdsProviderService {
 
   private async login(): Promise<void> {
     const creds = await this.getCredentials();
-    const res = await fetch(`${creds.apiUrl}/api/users/login/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: creds.username, password: creds.password }),
-    });
-    if (!res.ok) throw new Error(`BKDS login hatası [${this.organizationId}]: ${res.status}`);
+    const loginUrl = `${creds.apiUrl}/api/users/login/`;
+    let res: Response;
+    try {
+      res = await fetch(loginUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: creds.username, password: creds.password }),
+      });
+    } catch (e: any) {
+      throw new Error(`BKDS login network hatası [${this.organizationId}] (${loginUrl}): ${e?.message ?? e}`);
+    }
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`BKDS login hatası [${this.organizationId}] (${loginUrl}): ${res.status} — ${body.slice(0, 300)}`);
+    }
     const data = await res.json();
     this.accessToken = data.access;
     this.refreshToken = data.refresh;
@@ -136,10 +165,16 @@ export class BkdsProviderService {
       url.searchParams.set('start_time', startTime);
       url.searchParams.set('end_time', endTime);
 
-      const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+      let res: Response;
+      try {
+        res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+      } catch (e: any) {
+        throw new Error(`BKDS network hatası [${this.organizationId}] (${url.origin}): ${e?.message ?? e}`);
+      }
       if (!res.ok) {
         if (res.status === 401) { await this.login(); continue; }
-        throw new Error(`BKDS API hatası [${this.organizationId}]: ${res.status}`);
+        const body = await res.text().catch(() => '');
+        throw new Error(`BKDS API hatası [${this.organizationId}] (${url.pathname}): ${res.status} — ${body.slice(0, 300)}`);
       }
       const data: BkdsApiResponse = await res.json();
       allResults.push(...data.results);

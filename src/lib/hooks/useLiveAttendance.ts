@@ -12,6 +12,7 @@ export interface LiveData {
   bildirimler: Bildirim[];
   tumPersonelGirisler: PersonelGiris[];
   updatedAt: string;
+  bkdsError?: string | null;
 }
 
 export interface OgrenciRow {

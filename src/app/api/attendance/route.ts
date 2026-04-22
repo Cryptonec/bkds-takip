@@ -11,6 +11,7 @@ import { prisma } from '@/lib/prisma';
 
 // Per-org son çekim zamanı
 const lastBkdsFetchMap = new Map<string, number>();
+const lastBkdsErrorMap = new Map<string, { at: number; message: string }>();
 const BKDS_FETCH_INTERVAL = 2000;
 
 function capitalizeDerslik(str: string): string {
@@ -41,10 +42,16 @@ export async function GET(req: NextRequest) {
       await recalculateAttendance(tarih, orgId, now);
       await recalculateStaffAttendance(tarih, orgId, now);
       await generateAlerts(tarih, orgId);
-    } catch (err) {
-      console.error('[Attendance API] BKDS hatası:', err);
+      lastBkdsErrorMap.delete(orgId);
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      console.error('[Attendance API] BKDS hatası:', msg);
+      lastBkdsErrorMap.set(orgId, { at: now.getTime(), message: msg });
     }
   }
+
+  const lastErr = lastBkdsErrorMap.get(orgId);
+  const bkdsError = lastErr && (now.getTime() - lastErr.at) < 60_000 ? lastErr.message : null;
 
   const [attendances, staffAttendances, alerts, personelLog, ogrenciRawList, students] = await Promise.all([
     getLiveAttendance(tarih, orgId),
@@ -201,6 +208,7 @@ export async function GET(req: NextRequest) {
       tumPersonelGirisler,
       tumOgrenciGirisler,
       updatedAt: now.toISOString(),
+      bkdsError,
     },
     { headers: { 'Cache-Control': 'no-store' } },
   );

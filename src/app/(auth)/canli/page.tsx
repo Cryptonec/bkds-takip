@@ -242,6 +242,17 @@ export default function CanliPage() {
         </div>
       )}
 
+      {/* BKDS fetch error banner — sadece sunucu BKDS'den veri çekemiyorsa */}
+      {(data as any)?.bkdsError && (
+        <div className="bg-red-50 border-b border-red-200 px-6 py-2 flex items-start gap-3 shrink-0">
+          <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-red-700">BKDS veri çekme hatası — veriler güncellenmiyor</p>
+            <p className="text-xs text-red-600 font-mono truncate" title={(data as any).bkdsError}>{(data as any).bkdsError}</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-5 shrink-0 shadow-sm">
         <SaatSayaci lastUpdated={lastUpdated} />
