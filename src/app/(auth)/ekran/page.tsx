@@ -184,34 +184,42 @@ function useBildirimEkrani(sesAcik: boolean) {
         }
       });
 
-      // Map'e ekle; yeni kayıtları topla
-      const eklenenGirisler: Kayit[] = [];
-      const eklenenCikislar: Kayit[] = [];
-      yeniGirisler.forEach(k => {
-        const key = `${k.tur}:${k.ad}`;
-        if (!girisMapRef.current.has(key)) {
-          girisMapRef.current.set(key, k);
-          if (!isFirst.current) eklenenGirisler.push(k);
+      // Her poll'da sıfırdan inşa et — map accumulation yerine. Bu sayede F5 ile
+      // polling davranışı tam özdeş olur; stale state biriktirme riski yok.
+      const dedupe = (kayitlar: Kayit[]) => {
+        const seen = new Map<string, Kayit>();
+        for (const k of kayitlar) {
+          const key = `${k.tur}:${k.ad}`;
+          // Aynı kişi birden fazla kaynaktan gelmişse en erken ts'i tut (giriş için)
+          // ve en geç ts'i tut (çıkış için). Sadeleştirmek için ilk göreni al.
+          if (!seen.has(key)) seen.set(key, k);
         }
-      });
-      yeniCikislar.forEach(k => {
-        const key = `${k.tur}:${k.ad}`;
-        if (!cikisMapRef.current.has(key)) {
-          cikisMapRef.current.set(key, k);
-          if (!isFirst.current) eklenenCikislar.push(k);
-        }
-      });
+        return [...seen.values()];
+      };
 
-      // State'i güncelle — her iki liste de her zaman en güncel tam hali gösterir
-      const sortedGiris = [...girisMapRef.current.values()].sort((a,b) => b.ts - a.ts);
-      const sortedCikis = [...cikisMapRef.current.values()].sort((a,b) => b.ts - a.ts);
+      const tumGirisler = dedupe(yeniGirisler);
+      const tumCikislar = dedupe(yeniCikislar);
+
+      // Yeni eklenenleri bir önceki poll ile karşılaştırarak bul (animasyon + ses için)
+      const prevGirisKeys = new Set([...girisMapRef.current.keys()]);
+      const prevCikisKeys = new Set([...cikisMapRef.current.keys()]);
+      const eklenenGirisler: Kayit[] = tumGirisler.filter(k => !prevGirisKeys.has(`${k.tur}:${k.ad}`));
+      const eklenenCikislar: Kayit[] = tumCikislar.filter(k => !prevCikisKeys.has(`${k.tur}:${k.ad}`));
+
+      // Ref'leri güncelle — bir sonraki poll'da "yeni mi" diye bakmak için
+      girisMapRef.current = new Map(tumGirisler.map(k => [`${k.tur}:${k.ad}`, k]));
+      cikisMapRef.current = new Map(tumCikislar.map(k => [`${k.tur}:${k.ad}`, k]));
+
+      // State'i güncelle — ts'e göre desc sırala (en yeni en üstte)
+      const sortedGiris = tumGirisler.sort((a,b) => b.ts - a.ts);
+      const sortedCikis = tumCikislar.sort((a,b) => b.ts - a.ts);
       setGirisler(sortedGiris);
       setCikislar(sortedCikis);
 
-      // Ses + animasyon — yeni eklenenler için beep + TTS (tek en yeni kaydı seslendir)
+      // Ses + animasyon — ilk poll olmadığı sürece yeni kayıtlar için
       if (!isFirst.current) {
-        const enYeniGiris = eklenenGirisler.sort((a,b) => b.ts - a.ts)[0];
-        const enYeniCikis = eklenenCikislar.sort((a,b) => b.ts - a.ts)[0];
+        const enYeniGiris = [...eklenenGirisler].sort((a,b) => b.ts - a.ts)[0];
+        const enYeniCikis = [...eklenenCikislar].sort((a,b) => b.ts - a.ts)[0];
         eklenenGirisler.forEach(k => markYeni(k.id));
         eklenenCikislar.forEach(k => markYeni(k.id));
         if (enYeniGiris && sesAcikRef.current) {
@@ -233,10 +241,11 @@ function useBildirimEkrani(sesAcik: boolean) {
         ];
         console.debug('[ekran poll]',
           new Date().toLocaleTimeString(),
-          'girisMap:', girisMapRef.current.size,
-          'cikisMap:', cikisMapRef.current.size,
-          'personel in response:', personelInResp,
-          'new entries this poll:', yeniGirisler.length, '(', eklenenGirisler.map(k => k.ad).join(','), ')',
+          'giris:', sortedGiris.length,
+          'cikis:', sortedCikis.length,
+          'eklenen-giris:', eklenenGirisler.map(k => k.ad),
+          'eklenen-cikis:', eklenenCikislar.map(k => k.ad),
+          'personel-response:', personelInResp.length,
         );
       }
     } catch(e) { console.error('[Ekran]', e); }
