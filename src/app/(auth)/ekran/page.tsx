@@ -12,8 +12,8 @@ interface Kayit {
 }
 
 const MAX_NORMAL = 5;
-const MAX_FULLSCREEN = 15;
 const POLL_MS = 1000;
+const YENI_ANIMASYON_MS = 2400;
 
 function toTurkishTitle(text: string): string {
   return text
@@ -25,7 +25,7 @@ function toTurkishTitle(text: string): string {
 
 function speak(text: string) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-  if (text.includes('*')) return; // Maskeli isim — söyleme
+  if (text.includes('*')) return;
   try {
     window.speechSynthesis.cancel();
     const utt = new SpeechSynthesisUtterance(toTurkishTitle(text));
@@ -84,43 +84,31 @@ function fmt(iso: string | Date) {
   return new Date(iso).toLocaleTimeString('tr-TR', { hour:'2-digit', minute:'2-digit' });
 }
 
-function useBildirimEkrani(sesAcik: boolean, max: number) {
+function useBildirimEkrani(sesAcik: boolean) {
   const girisMapRef = useRef<Map<string,Kayit>>(new Map());
   const cikisMapRef = useRef<Map<string,Kayit>>(new Map());
   const [girisler, setGirisler] = useState<Kayit[]>([]);
   const [cikislar, setCikislar] = useState<Kayit[]>([]);
+  const [yeniIds, setYeniIds] = useState<Set<string>>(new Set());
   const [sonGuncelleme, setSonGuncelleme] = useState('');
   const sesAcikRef = useRef(sesAcik);
-  const maxRef = useRef(max);
   const isFirst = useRef(true);
 
   useEffect(() => { sesAcikRef.current = sesAcik; }, [sesAcik]);
-  useEffect(() => {
-    maxRef.current = max;
-    commitGiris(null);
-    commitCikis(null);
-  }, [max]);
 
-  function commitGiris(yeniKayit: Kayit | null) {
-    const sorted = [...girisMapRef.current.values()]
-      .sort((a,b) => b.ts - a.ts)
-      .slice(0, maxRef.current);
-    setGirisler(sorted);
-    if (yeniKayit && sesAcikRef.current) {
-      calarGiris();
-      setTimeout(() => seslendir(yeniKayit), 400);
-    }
-  }
-
-  function commitCikis(yeniKayit: Kayit | null) {
-    const sorted = [...cikisMapRef.current.values()]
-      .sort((a,b) => b.ts - a.ts)
-      .slice(0, maxRef.current);
-    setCikislar(sorted);
-    if (yeniKayit && sesAcikRef.current) {
-      calarCikis();
-      setTimeout(() => seslendir(yeniKayit), 400);
-    }
+  function markYeni(id: string) {
+    setYeniIds(prev => {
+      const s = new Set(prev);
+      s.add(id);
+      return s;
+    });
+    setTimeout(() => {
+      setYeniIds(prev => {
+        const s = new Set(prev);
+        s.delete(id);
+        return s;
+      });
+    }, YENI_ANIMASYON_MS);
   }
 
   const poll = useCallback(async () => {
@@ -136,7 +124,7 @@ function useBildirimEkrani(sesAcik: boolean, max: number) {
       const yeniGirisler: Kayit[] = [];
       const yeniCikislar: Kayit[] = [];
 
-      // 1) Öğrenci giriş/çıkışları: önce ders-bazlı kayıtlar, sonra BKDS ham verisi (Lila olmasa bile)
+      // 1) Öğrenci giriş/çıkışları
       const ogrenciGirisKeys = new Set<string>();
       const ogrenciCikisKeys = new Set<string>();
       ogrenciRows.filter((r:any) => r.gercekGiris).forEach((r:any) => {
@@ -149,7 +137,6 @@ function useBildirimEkrani(sesAcik: boolean, max: number) {
         yeniCikislar.push({ id:`oc-${r.ogrenciId}`, tip:'cikis', tur:'ogrenci',
           ad: r.ogrenciAdi, saat: fmt(r.gercekCikis), ts: new Date(r.gercekCikis).getTime() });
       });
-      // BKDS ham verisinden: dersi olmayan veya ders-bazlı eşleşmeyen öğrenciler
       tumOgrenci.forEach((o:any) => {
         const k = o.studentId ?? o.key;
         if (o.ilkGiris && !ogrenciGirisKeys.has(k)) {
@@ -197,33 +184,47 @@ function useBildirimEkrani(sesAcik: boolean, max: number) {
         }
       });
 
-      // Map güncelle
-      let yeniGiris: Kayit | null = null;
-      let yeniCikis: Kayit | null = null;
+      // Map'e ekle; yeni kayıtları topla
+      const eklenenGirisler: Kayit[] = [];
+      const eklenenCikislar: Kayit[] = [];
       yeniGirisler.forEach(k => {
         const key = `${k.tur}:${k.ad}`;
         if (!girisMapRef.current.has(key)) {
           girisMapRef.current.set(key, k);
-          if (!isFirst.current && (!yeniGiris || k.ts > yeniGiris.ts)) yeniGiris = k;
+          if (!isFirst.current) eklenenGirisler.push(k);
         }
       });
       yeniCikislar.forEach(k => {
         const key = `${k.tur}:${k.ad}`;
         if (!cikisMapRef.current.has(key)) {
           cikisMapRef.current.set(key, k);
-          if (!isFirst.current && (!yeniCikis || k.ts > yeniCikis.ts)) yeniCikis = k;
+          if (!isFirst.current) eklenenCikislar.push(k);
         }
       });
 
-      if (isFirst.current) {
-        commitGiris(null);
-        commitCikis(null);
-        isFirst.current = false;
-      } else {
-        if (yeniGiris) commitGiris(yeniGiris);
-        if (yeniCikis) commitCikis(yeniCikis);
+      // State'i güncelle — her iki liste de her zaman en güncel tam hali gösterir
+      const sortedGiris = [...girisMapRef.current.values()].sort((a,b) => b.ts - a.ts);
+      const sortedCikis = [...cikisMapRef.current.values()].sort((a,b) => b.ts - a.ts);
+      setGirisler(sortedGiris);
+      setCikislar(sortedCikis);
+
+      // Ses / animasyon — sadece yeni eklenenler için (en yeni olanı seslendir)
+      if (!isFirst.current) {
+        const enYeniGiris = eklenenGirisler.sort((a,b) => b.ts - a.ts)[0];
+        const enYeniCikis = eklenenCikislar.sort((a,b) => b.ts - a.ts)[0];
+        eklenenGirisler.forEach(k => markYeni(k.id));
+        eklenenCikislar.forEach(k => markYeni(k.id));
+        if (enYeniGiris && sesAcikRef.current) {
+          calarGiris();
+          setTimeout(() => seslendir(enYeniGiris), 400);
+        }
+        if (enYeniCikis && sesAcikRef.current) {
+          calarCikis();
+          setTimeout(() => seslendir(enYeniCikis), 400);
+        }
       }
 
+      isFirst.current = false;
       setSonGuncelleme(new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}));
     } catch(e) { console.error('[Ekran]', e); }
   }, []);
@@ -236,7 +237,7 @@ function useBildirimEkrani(sesAcik: boolean, max: number) {
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis); };
   }, [poll]);
 
-  return { girisler, cikislar, sonGuncelleme };
+  return { girisler, cikislar, yeniIds, sonGuncelleme };
 }
 
 export default function EkranPage() {
@@ -250,7 +251,6 @@ export default function EkranPage() {
     return () => document.removeEventListener('fullscreenchange', onFS);
   }, []);
 
-  // TTS seslerini hazırda tutmak için (bazı tarayıcılar ilk kullanımda boş liste dönüyor)
   useEffect(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.getVoices();
@@ -260,8 +260,7 @@ export default function EkranPage() {
     }
   }, []);
 
-  const MAX = isFullscreen ? MAX_FULLSCREEN : MAX_NORMAL;
-  const { girisler, cikislar, sonGuncelleme } = useBildirimEkrani(sesAcik, MAX);
+  const { girisler, cikislar, yeniIds, sonGuncelleme } = useBildirimEkrani(sesAcik);
   const [saat, setSaat] = useState('');
   const [tarih, setTarih] = useState('');
 
@@ -276,10 +275,14 @@ export default function EkranPage() {
     return () => clearInterval(t);
   }, []);
 
-  return (
-    <div className="min-h-screen bg-gray-950 text-white flex flex-col select-none overflow-hidden">
+  // Normal modda ilk 5 kayıt; tam ekranda bütün kayıtlar
+  const listeGiris = isFullscreen ? girisler : girisler.slice(0, MAX_NORMAL);
+  const listeCikis = isFullscreen ? cikislar : cikislar.slice(0, MAX_NORMAL);
 
-      {/* Üst bar — saat, kurum, canlı/ses/son-veri, fullscreen */}
+  return (
+    <div className="h-screen bg-gray-950 text-white flex flex-col select-none overflow-hidden">
+
+      {/* Üst bar */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-gray-800 shrink-0 gap-4">
         <div className="flex items-center gap-4 min-w-0">
           <button
@@ -295,7 +298,6 @@ export default function EkranPage() {
           </div>
         </div>
 
-        {/* Orta — canlı, ses, son veri */}
         <div className="flex items-center gap-2 shrink-0">
           <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-green-900/60 border border-green-700 text-green-400">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
@@ -334,46 +336,27 @@ export default function EkranPage() {
 
       {/* Ana içerik */}
       <div className="flex-1 grid grid-cols-2 min-h-0">
-        <div className="border-r border-gray-800 flex flex-col min-h-0">
-          <div className="flex items-center gap-3 px-6 py-3 bg-green-950/60 border-b border-green-900/40 shrink-0">
-            <div className="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center shrink-0">
-              <UserCheck className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <p className="text-lg font-black text-green-400 uppercase tracking-widest">Giriş</p>
-              <p className="text-xs text-green-700">Hoş Geldiniz</p>
-            </div>
-            <span className="ml-auto text-xs text-green-700 tabular-nums">{girisler.length} kayıt</span>
-          </div>
-          <div className="flex-1 flex flex-col gap-1.5 px-3 py-2 overflow-hidden">
-            {girisler.length === 0
-              ? <div className="flex-1 flex items-center justify-center"><p className="text-gray-700 text-3xl">—</p></div>
-              : girisler.map((k,i) => <BildirimsalKart key={k.id} kayit={k} index={i} total={girisler.length} />)
-            }
-          </div>
-        </div>
-
-        <div className="flex flex-col min-h-0">
-          <div className="flex items-center gap-3 px-6 py-3 bg-orange-950/60 border-b border-orange-900/40 shrink-0">
-            <div className="w-10 h-10 rounded-full bg-orange-500 flex items-center justify-center shrink-0">
-              <LogOut className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <p className="text-lg font-black text-orange-400 uppercase tracking-widest">Çıkış</p>
-              <p className="text-xs text-orange-700">Güle Güle</p>
-            </div>
-            <span className="ml-auto text-xs text-orange-700 tabular-nums">{cikislar.length} kayıt</span>
-          </div>
-          <div className="flex-1 flex flex-col gap-1.5 px-3 py-2 overflow-hidden">
-            {cikislar.length === 0
-              ? <div className="flex-1 flex items-center justify-center"><p className="text-gray-700 text-3xl">—</p></div>
-              : cikislar.map((k,i) => <BildirimsalKart key={k.id} kayit={k} index={i} total={cikislar.length} />)
-            }
-          </div>
-        </div>
+        <Sutun
+          tip="giris"
+          baslik="Giriş"
+          altBaslik="Hoş Geldiniz"
+          kayitlar={listeGiris}
+          toplamKayit={girisler.length}
+          isFullscreen={isFullscreen}
+          yeniIds={yeniIds}
+        />
+        <Sutun
+          tip="cikis"
+          baslik="Çıkış"
+          altBaslik="Güle Güle"
+          kayitlar={listeCikis}
+          toplamKayit={cikislar.length}
+          isFullscreen={isFullscreen}
+          yeniIds={yeniIds}
+        />
       </div>
 
-      {/* Alt bar — sadece legend */}
+      {/* Alt bar */}
       <div className="px-6 py-2 border-t border-gray-800 flex items-center justify-center gap-6 shrink-0 text-xs text-gray-600">
         <span className="flex items-center gap-1.5">
           <span className="w-3 h-3 rounded-full bg-blue-500 inline-block" /> Öğrenci
@@ -393,44 +376,83 @@ export default function EkranPage() {
   );
 }
 
-const SEVIYE = [
-  { girisKart:'bg-green-700 border-2 border-green-400 shadow-lg shadow-green-900/40',
-    cikisKart:'bg-orange-700 border-2 border-orange-400 shadow-lg shadow-orange-900/40',
-    ogrenciIkon:'bg-blue-500', personelIkon:'bg-purple-500',
-    metin:'text-white', saat:'text-white/80', ad:'text-3xl', saatSize:'text-2xl', ikon:'w-14 h-14' },
-  { girisKart:'bg-green-900/80 border border-green-600',
-    cikisKart:'bg-orange-900/80 border border-orange-600',
-    ogrenciIkon:'bg-blue-600', personelIkon:'bg-purple-600',
-    metin:'text-green-100', saat:'text-green-300', ad:'text-2xl', saatSize:'text-xl', ikon:'w-12 h-12' },
-  { girisKart:'bg-green-950/50 border border-green-800/40',
-    cikisKart:'bg-orange-950/50 border border-orange-800/40',
-    ogrenciIkon:'bg-blue-700', personelIkon:'bg-purple-700',
-    metin:'text-green-300', saat:'text-green-500', ad:'text-xl', saatSize:'text-lg', ikon:'w-11 h-11' },
-  { girisKart:'bg-gray-900/50 border border-gray-700',
-    cikisKart:'bg-gray-900/50 border border-gray-700',
-    ogrenciIkon:'bg-gray-600', personelIkon:'bg-gray-600',
-    metin:'text-gray-400', saat:'text-gray-500', ad:'text-lg', saatSize:'text-base', ikon:'w-10 h-10' },
-  { girisKart:'bg-gray-900/20 border border-gray-800',
-    cikisKart:'bg-gray-900/20 border border-gray-800',
-    ogrenciIkon:'bg-gray-800', personelIkon:'bg-gray-800',
-    metin:'text-gray-500', saat:'text-gray-600', ad:'text-base', saatSize:'text-sm', ikon:'w-9 h-9' },
-];
-
-function BildirimsalKart({ kayit, index }: { kayit: Kayit; index: number; total?: number }) {
-  const isGiris = kayit.tip === 'giris';
-  const s = SEVIYE[Math.min(index, SEVIYE.length-1)];
-  const kart = isGiris ? s.girisKart : s.cikisKart;
-  const ikonBg = kayit.tur === 'ogrenci' ? s.ogrenciIkon : s.personelIkon;
+function Sutun({
+  tip, baslik, altBaslik, kayitlar, toplamKayit, isFullscreen, yeniIds,
+}: {
+  tip: 'giris' | 'cikis';
+  baslik: string;
+  altBaslik: string;
+  kayitlar: Kayit[];
+  toplamKayit: number;
+  isFullscreen: boolean;
+  yeniIds: Set<string>;
+}) {
+  const isGiris = tip === 'giris';
+  const baslikBg  = isGiris ? 'bg-green-950/60 border-green-900/40' : 'bg-orange-950/60 border-orange-900/40';
+  const ikonRing  = isGiris ? 'bg-green-600' : 'bg-orange-500';
+  const baslikMetin = isGiris ? 'text-green-400' : 'text-orange-400';
+  const altMetin   = isGiris ? 'text-green-700' : 'text-orange-700';
+  const Icon = isGiris ? UserCheck : LogOut;
+  const border = isGiris ? 'border-r border-gray-800' : '';
 
   return (
-    <div className={`flex-1 flex items-center gap-4 rounded-xl px-5 transition-all duration-500 min-h-0 ${kart}`}>
-      <div className={`rounded-full flex items-center justify-center shrink-0 ${ikonBg} ${s.ikon}`}>
-        <UserCheck className="w-5 h-5 text-white" />
+    <div className={`flex flex-col min-h-0 ${border}`}>
+      <div className={`flex items-center gap-3 px-6 py-3 border-b shrink-0 ${baslikBg}`}>
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${ikonRing}`}>
+          <Icon className="w-5 h-5 text-white" />
+        </div>
+        <div>
+          <p className={`text-lg font-black uppercase tracking-widest ${baslikMetin}`}>{baslik}</p>
+          <p className={`text-xs ${altMetin}`}>{altBaslik}</p>
+        </div>
+        <span className={`ml-auto text-xs tabular-nums ${altMetin}`}>
+          {isFullscreen ? toplamKayit : Math.min(kayitlar.length, MAX_NORMAL)} kayıt
+          {isFullscreen && toplamKayit > kayitlar.length ? ` / ${toplamKayit}` : ''}
+        </span>
       </div>
-      <p className={`font-black flex-1 min-w-0 truncate ${s.ad} ${s.metin}`} title={kayit.ad}>
+      <div className={`flex-1 flex flex-col gap-2 px-3 py-2 min-h-0 ${isFullscreen ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+        {kayitlar.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-gray-700 text-3xl">—</p>
+          </div>
+        ) : (
+          kayitlar.map(k => (
+            <BildirimsalKart
+              key={k.id}
+              kayit={k}
+              isFullscreen={isFullscreen}
+              yeni={yeniIds.has(k.id)}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BildirimsalKart({ kayit, isFullscreen, yeni }: { kayit: Kayit; isFullscreen: boolean; yeni: boolean }) {
+  const isGiris = kayit.tip === 'giris';
+  const kartBg = isGiris
+    ? 'bg-green-800 border-2 border-green-500 shadow-lg shadow-green-950/40'
+    : 'bg-orange-800 border-2 border-orange-500 shadow-lg shadow-orange-950/40';
+  const ikonBg = kayit.tur === 'ogrenci' ? 'bg-blue-500' : 'bg-purple-500';
+
+  // Normal modda kartlar flex-1 ile alanı doldurur; tam ekranda sabit yükseklik + scroll.
+  const boyut = isFullscreen
+    ? { kart: 'h-24 px-6', ad: 'text-4xl', saat: 'text-3xl', ikon: 'w-16 h-16', ikonSvg: 'w-8 h-8' }
+    : { kart: 'flex-1 px-5', ad: 'text-2xl', saat: 'text-xl', ikon: 'w-12 h-12', ikonSvg: 'w-6 h-6' };
+
+  return (
+    <div
+      className={`flex items-center gap-4 rounded-xl shrink-0 min-h-0 transition-all duration-300 ${boyut.kart} ${kartBg} ${yeni ? 'animate-pop-in animate-glow-ring ring-4 ring-white/40' : ''}`}
+    >
+      <div className={`rounded-full flex items-center justify-center shrink-0 ${ikonBg} ${boyut.ikon}`}>
+        <UserCheck className={`text-white ${boyut.ikonSvg}`} />
+      </div>
+      <p className={`font-black flex-1 min-w-0 truncate text-white ${boyut.ad}`} title={kayit.ad}>
         {kayit.ad}
       </p>
-      <p className={`font-bold tabular-nums shrink-0 ${s.saatSize} ${s.saat}`}>{kayit.saat}</p>
+      <p className={`font-bold tabular-nums shrink-0 text-white/80 ${boyut.saat}`}>{kayit.saat}</p>
     </div>
   );
 }
