@@ -17,15 +17,19 @@ export const fetchCache = 'force-no-store';
 // Per-org son çekim zamanı
 const lastBkdsFetchMap = new Map<string, number>();
 const lastBkdsErrorMap = new Map<string, { at: number; message: string }>();
-const inFlightMap = new Set<string>();
-const BKDS_FETCH_INTERVAL = 1000; // fire-and-forget olduğu için 1s yeterli
+const inFlightMap = new Map<string, number>(); // orgId -> startedAt
+const BKDS_FETCH_INTERVAL = 1000;
+const STUCK_FETCH_MS = 15_000; // 15 sn sonra stuck sayılır, yeniden tetiklenebilir
 
 // Arka planda BKDS'yi çekip DB'yi güncelleyen non-blocking helper.
-// İstemci yanıtını beklemez — yanıt hep güncel DB durumunu okur.
 function refreshBkdsInBackground(orgId: string, tarih: Date) {
-  if (inFlightMap.has(orgId)) return; // aynı anda iki iş yok
-  inFlightMap.add(orgId);
+  const existing = inFlightMap.get(orgId);
+  if (existing !== undefined) {
+    if (Date.now() - existing < STUCK_FETCH_MS) return; // hâlâ çalışıyor
+    console.warn(`[Attendance] ${orgId} için önceki BKDS fetch ${STUCK_FETCH_MS}ms'dir sürüyor, zorla yeniden tetikliyorum`);
+  }
   const startedAt = Date.now();
+  inFlightMap.set(orgId, startedAt);
   lastBkdsFetchMap.set(orgId, startedAt);
 
   (async () => {
@@ -36,15 +40,17 @@ function refreshBkdsInBackground(orgId: string, tarih: Date) {
       await recalculateAttendance(tarih, orgId, new Date());
       await recalculateStaffAttendance(tarih, orgId, new Date());
       await generateAlerts(tarih, orgId);
+      const elapsed = Date.now() - startedAt;
+      console.log(`[Attendance BG] ${orgId} BKDS çekimi ${elapsed}ms'de tamamlandı, ${records.length} kayıt`);
       lastBkdsErrorMap.delete(orgId);
     } catch (err: any) {
       const msg = err?.message ?? String(err);
       console.error('[Attendance BG] BKDS hatası:', msg);
       lastBkdsErrorMap.set(orgId, { at: Date.now(), message: msg });
-      // Hata durumunda kısa bir backoff (3s)
       lastBkdsFetchMap.set(orgId, Date.now() - BKDS_FETCH_INTERVAL + 3000);
     } finally {
-      inFlightMap.delete(orgId);
+      // Sadece kendi damgamızsa temizle (stuck detector yeni bir tane başlatmışsa karışmasın)
+      if (inFlightMap.get(orgId) === startedAt) inFlightMap.delete(orgId);
     }
   })();
 }

@@ -157,10 +157,15 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
     try {
       const params = tarih ? `?tarih=${tarih}` : '';
       const sep = params ? '&' : '?';
-      const res = await window.fetch(`/api/attendance${params}${sep}_t=${Date.now()}`, { cache: 'no-store' });
+      const startedAt = Date.now();
+      const res = await window.fetch(`/api/attendance${params}${sep}_t=${startedAt}`, { cache: 'no-store' });
       if (!res.ok) throw new Error('Veri alınamadı');
       const json: LiveData = await res.json();
       const now = new Date();
+      if (typeof window !== 'undefined') {
+        (window as any).__lastPoll = startedAt;
+        console.debug('[poll]', new Date(startedAt).toLocaleTimeString(), 'ogr:', json.ogrenciRows?.length, 'per:', json.personelRows?.length);
+      }
 
       // Tüm personel girişlerini tek bir haritada topla
       // key = staffId (varsa) veya ogretmenAdi
