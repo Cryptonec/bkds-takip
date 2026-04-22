@@ -113,7 +113,7 @@ function useBildirimEkrani(sesAcik: boolean) {
 
   const poll = useCallback(async () => {
     try {
-      const res = await fetch('/api/attendance');
+      const res = await fetch(`/api/attendance?_t=${Date.now()}`, { cache: 'no-store' });
       if (!res.ok) return;
       const json = await res.json();
       const ogrenciRows = json.ogrenciRows ?? [];

@@ -9,10 +9,15 @@ import { getBkdsService } from '@/lib/services/bkdsProviderService';
 import { matchMaskedName } from '@/lib/utils/normalize';
 import { prisma } from '@/lib/prisma';
 
+// Next.js bu route'u asla cache'lemesin — her istekte taze data
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
+
 // Per-org son çekim zamanı
 const lastBkdsFetchMap = new Map<string, number>();
 const lastBkdsErrorMap = new Map<string, { at: number; message: string }>();
-const BKDS_FETCH_INTERVAL = 2000;
+const BKDS_FETCH_INTERVAL = 1500;
 
 function capitalizeDerslik(str: string): string {
   return str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -35,18 +40,21 @@ export async function GET(req: NextRequest) {
   const shouldFetch = (now.getTime() - lastFetch) >= BKDS_FETCH_INTERVAL;
   if (shouldFetch) {
     try {
-      lastBkdsFetchMap.set(orgId, now.getTime());
       const service = getBkdsService(orgId);
       const records = await service.fetchToday();
       await service.saveAndAggregate(records, tarih);
       await recalculateAttendance(tarih, orgId, now);
       await recalculateStaffAttendance(tarih, orgId, now);
       await generateAlerts(tarih, orgId);
+      // Başarılı olduysa throttle güncelle; başarısızsa hemen tekrar denesin
+      lastBkdsFetchMap.set(orgId, now.getTime());
       lastBkdsErrorMap.delete(orgId);
     } catch (err: any) {
       const msg = err?.message ?? String(err);
       console.error('[Attendance API] BKDS hatası:', msg);
       lastBkdsErrorMap.set(orgId, { at: now.getTime(), message: msg });
+      // Hata durumunda da 3s throttle koy (hızlı fail loop olmasın)
+      lastBkdsFetchMap.set(orgId, now.getTime() - BKDS_FETCH_INTERVAL + 3000);
     }
   }
 

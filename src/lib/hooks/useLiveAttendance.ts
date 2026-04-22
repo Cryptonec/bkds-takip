@@ -156,7 +156,8 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
   const fetchData = useCallback(async () => {
     try {
       const params = tarih ? `?tarih=${tarih}` : '';
-      const res = await window.fetch(`/api/attendance${params}`);
+      const sep = params ? '&' : '?';
+      const res = await window.fetch(`/api/attendance${params}${sep}_t=${Date.now()}`, { cache: 'no-store' });
       if (!res.ok) throw new Error('Veri alınamadı');
       const json: LiveData = await res.json();
       const now = new Date();
