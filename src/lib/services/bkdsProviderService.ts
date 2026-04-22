@@ -13,7 +13,49 @@ interface BkdsApiRecord {
 interface BkdsApiResponse {
   count: number;
   next: string | null;
-  results: BkdsApiRecord[];
+  results: any[];
+}
+
+/**
+ * Yerel BRY ile MEB public response alanları tam eşleşmeyebilir.
+ * Alternatifleri denedikten sonra geçerli bir kayıt üretemiyorsak null döndür;
+ * çağıran filter ile atar.
+ */
+function normalizeRecord(r: any): BkdsApiRecord | null {
+  if (!r) return null;
+
+  const fullName   = r.individual_full_name ?? r.full_name ?? r.ad_soyad ?? r.adSoyad ?? r.name ?? null;
+  const firstEntry = r.first_entry ?? r.ilk_giris ?? r.ilkGiris ?? r.entry ?? null;
+  const lastExit   = r.last_exit ?? r.son_cikis ?? r.sonCikis ?? r.exit ?? null;
+  const idNumber   = r.individual_identity_number ?? r.identity_number ?? r.tc ?? r.masked_tc ?? null;
+  const uuid       = r.individual_uuid ?? r.uuid ?? r.id ?? '';
+
+  // individual_type: 1 (öğrenci) / 2 (personel). Farklı isimler de olabilir.
+  let typeRaw = r.individual_type ?? r.type ?? r.birey_tipi ?? r.bireyTipi;
+  if (typeof typeRaw === 'string') {
+    const low = typeRaw.toLowerCase();
+    if (/ogrenci|öğrenci|birey|student/.test(low)) typeRaw = 1;
+    else if (/personel|staff|ogretmen|öğretmen|teacher/.test(low)) typeRaw = 2;
+    else typeRaw = Number(typeRaw);
+  }
+  const individualType = Number.isFinite(typeRaw) ? Number(typeRaw) : null;
+
+  if (!fullName || !firstEntry) return null; // zorunlu alanlar yoksa at
+
+  const entryDate = new Date(firstEntry);
+  if (isNaN(entryDate.getTime())) return null;
+
+  const exitDate = lastExit ? new Date(lastExit) : null;
+  const validExit = exitDate && !isNaN(exitDate.getTime()) ? exitDate : null;
+
+  return {
+    individual_uuid: String(uuid),
+    individual_full_name: String(fullName),
+    individual_identity_number: idNumber ? String(idNumber) : '',
+    individual_type: individualType ?? 1,
+    first_entry: entryDate.toISOString(),
+    last_exit: validExit ? validExit.toISOString() : null,
+  };
 }
 
 interface OrgCredentials {
@@ -186,7 +228,11 @@ export class BkdsProviderService {
         throw new Error(`BKDS API hatası [${this.organizationId}] (${url.pathname}): ${res.status} — ${body.slice(0, 300)}`);
       }
       const data: BkdsApiResponse = await res.json();
-      allResults.push(...data.results);
+      if (page === 1 && data.results?.[0]) {
+        console.log(`[BKDS][${this.organizationId}] örnek kayıt alanları:`, Object.keys(data.results[0]));
+      }
+      const normalized = (data.results ?? []).map(r => normalizeRecord(r)).filter((r): r is BkdsApiRecord => r !== null);
+      allResults.push(...normalized);
       hasMore = !!data.next;
       page++;
     }
@@ -200,20 +246,31 @@ export class BkdsProviderService {
     const dateOnly = new Date(tarih);
     dateOnly.setHours(0, 0, 0, 0);
 
-    // Ham verileri kaydet
+    // Ham verileri kaydet — zorunlu alanları doğrula, geçersiz kayıtları at
     await prisma.bkdsRaw.deleteMany({ where: { organizationId: orgId, tarih: dateOnly } });
-    if (records.length > 0) {
-      await prisma.bkdsRaw.createMany({
-        data: records.map(r => ({
+    const rawRows = records
+      .map(r => {
+        const giris = new Date(r.first_entry);
+        const cikis = r.last_exit ? new Date(r.last_exit) : null;
+        if (!r.individual_full_name || isNaN(giris.getTime())) return null;
+        if (cikis && isNaN(cikis.getTime())) return null;
+        return {
           organizationId: orgId,
           tarih: dateOnly,
           adSoyad: r.individual_full_name,
-          maskedTc: r.individual_identity_number ?? null,
-          individualType: r.individual_type ?? null,
-          girisZamani: new Date(r.first_entry),
-          cikisZamani: r.last_exit ? new Date(r.last_exit) : null,
-        })),
-      });
+          maskedTc: r.individual_identity_number || null,
+          individualType: Number.isFinite(r.individual_type as any) ? r.individual_type : null,
+          girisZamani: giris,
+          cikisZamani: cikis,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+
+    if (rawRows.length !== records.length) {
+      console.warn(`[BKDS][${orgId}] ${records.length - rawRows.length} kayıt geçersiz alan nedeniyle atlandı`);
+    }
+    if (rawRows.length > 0) {
+      await prisma.bkdsRaw.createMany({ data: rawRows });
     }
 
     const bireyRecords    = records.filter(r => r.individual_type === 1);
