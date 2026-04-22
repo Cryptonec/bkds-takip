@@ -15,37 +15,6 @@ const MAX_NORMAL = 5;
 const POLL_MS = 1000;
 const YENI_ANIMASYON_MS = 2400;
 
-function toTurkishTitle(text: string): string {
-  return text
-    .replace(/İ/g, 'i').replace(/I/g, 'ı')
-    .replace(/Ğ/g, 'ğ').replace(/Ü/g, 'ü')
-    .replace(/Ş/g, 'ş').replace(/Ö/g, 'ö')
-    .replace(/Ç/g, 'ç');
-}
-
-function speak(text: string) {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-  if (text.includes('*')) return;
-  try {
-    window.speechSynthesis.cancel();
-    const utt = new SpeechSynthesisUtterance(toTurkishTitle(text));
-    utt.lang = 'tr-TR';
-    utt.rate = 0.9;
-    utt.pitch = 1.0;
-    utt.volume = 1.0;
-    const voices = window.speechSynthesis.getVoices();
-    const trVoice = voices.find(v => v.lang.startsWith('tr'));
-    if (trVoice) utt.voice = trVoice;
-    window.speechSynthesis.speak(utt);
-  } catch {}
-}
-
-function seslendir(kayit: Kayit) {
-  const onek = kayit.tur === 'personel' ? 'Sayın ' : '';
-  const son = kayit.tip === 'giris' ? ', hoş geldiniz' : ', güle güle';
-  speak(`${onek}${kayit.ad}${son}`);
-}
-
 function calarGiris() {
   try {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -208,20 +177,12 @@ function useBildirimEkrani(sesAcik: boolean) {
       setGirisler(sortedGiris);
       setCikislar(sortedCikis);
 
-      // Ses / animasyon — sadece yeni eklenenler için (en yeni olanı seslendir)
+      // Ses + animasyon — sadece yeni eklenen kayıtlar için beep; TTS kapalı
       if (!isFirst.current) {
-        const enYeniGiris = eklenenGirisler.sort((a,b) => b.ts - a.ts)[0];
-        const enYeniCikis = eklenenCikislar.sort((a,b) => b.ts - a.ts)[0];
         eklenenGirisler.forEach(k => markYeni(k.id));
         eklenenCikislar.forEach(k => markYeni(k.id));
-        if (enYeniGiris && sesAcikRef.current) {
-          calarGiris();
-          setTimeout(() => seslendir(enYeniGiris), 400);
-        }
-        if (enYeniCikis && sesAcikRef.current) {
-          calarCikis();
-          setTimeout(() => seslendir(enYeniCikis), 400);
-        }
+        if (eklenenGirisler.length > 0 && sesAcikRef.current) calarGiris();
+        if (eklenenCikislar.length > 0 && sesAcikRef.current) calarCikis();
       }
 
       isFirst.current = false;
@@ -249,15 +210,6 @@ export default function EkranPage() {
     const onFS = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onFS);
     return () => document.removeEventListener('fullscreenchange', onFS);
-  }, []);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.getVoices();
-      const onVoices = () => window.speechSynthesis.getVoices();
-      window.speechSynthesis.addEventListener?.('voiceschanged', onVoices);
-      return () => window.speechSynthesis.removeEventListener?.('voiceschanged', onVoices);
-    }
   }, []);
 
   const { girisler, cikislar, yeniIds, sonGuncelleme } = useBildirimEkrani(sesAcik);

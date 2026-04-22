@@ -84,32 +84,6 @@ export interface Bildirim {
   baslangic: string;
 }
 
-function toTurkishTitle(text: string): string {
-  // TTS için düzgün Türkçe büyük/küçük harf
-  return text
-    .replace(/İ/g, 'i').replace(/I/g, 'ı')
-    .replace(/Ğ/g, 'ğ').replace(/Ü/g, 'ü')
-    .replace(/Ş/g, 'ş').replace(/Ö/g, 'ö')
-    .replace(/Ç/g, 'ç');
-}
-
-function speak(text: string) {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-  if (text.includes('*')) return; // Maskeli isim — söyleme
-  // Türkçe TTS için küçük harfe çevir (büyük harf heceleme yapar)
-  const normalized = toTurkishTitle(text);
-  window.speechSynthesis.cancel();
-  const utt = new SpeechSynthesisUtterance(normalized);
-  utt.lang = 'tr-TR';
-  utt.rate = 0.85;
-  utt.pitch = 1.0;
-  utt.volume = 1.0;
-  const voices = window.speechSynthesis.getVoices();
-  const trVoice = voices.find(v => v.lang.startsWith('tr'));
-  if (trVoice) utt.voice = trVoice;
-  window.speechSynthesis.speak(utt);
-}
-
 function playBeep(tip: 'giris' | 'cikis' | 'uyari' | 'kritik' | 'personel_giris' | 'personel_cikis') {
   try {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -198,10 +172,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
         }
         if (yeniPG.length > 0) {
           setYeniPersonelGiris(yeniPG);
-          yeniPG.forEach(p => {
-            playBeep('personel_giris');
-            setTimeout(() => speak(`Sayın ${p.ad}, hoş geldiniz`), 400);
-          });
+          yeniPG.forEach(() => playBeep('personel_giris'));
           setTimeout(() => setYeniPersonelGiris([]), 5000);
         }
 
@@ -214,10 +185,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
         }
         if (yeniPC.length > 0) {
           setYeniPersonelCikis(yeniPC);
-          yeniPC.forEach(p => {
-            playBeep('personel_cikis');
-            setTimeout(() => speak(`Sayın ${p.ad}, güle güle`), 400);
-          });
+          yeniPC.forEach(() => playBeep('personel_cikis'));
           setTimeout(() => setYeniPersonelCikis([]), 5000);
         }
 
@@ -227,10 +195,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
         );
         if (yeniG.length > 0) {
           setYeniGirisler(yeniG);
-          yeniG.forEach(r => {
-            playBeep('giris');
-            setTimeout(() => speak(`${r.ogrenciAdi}, hoş geldiniz`), 400);
-          });
+          yeniG.forEach(() => playBeep('giris'));
           setTimeout(() => setYeniGirisler([]), 5000);
         }
 
@@ -240,10 +205,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
         );
         if (yeniC.length > 0) {
           setYeniCikislar(yeniC);
-          yeniC.forEach(r => {
-            playBeep('cikis');
-            setTimeout(() => speak(`${r.ogrenciAdi}, güle güle`), 400);
-          });
+          yeniC.forEach(() => playBeep('cikis'));
           setTimeout(() => setYeniCikislar([]), 5000);
         }
 
@@ -282,9 +244,8 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
   }, [tarih]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
-      if ('speechSynthesis' in window) window.speechSynthesis.getVoices();
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
     }
     fetchData();
     const interval = setInterval(fetchData, intervalMs);

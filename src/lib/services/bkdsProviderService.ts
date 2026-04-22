@@ -87,27 +87,8 @@ export class BkdsProviderService {
     });
 
     if (dbCred) {
-      // Self-heal: eğer DB eski MEB public URL'sini tutuyor ama .env farklı
-      // bir URL'e (örn. kurum-içi BRY) işaret ediyorsa, env'i üstün tutup DB'yi güncelle.
-      const envUrl = process.env.BKDS_API_URL;
-      const dbLooksStale = /bkds-api\.meb\.gov\.tr/i.test(dbCred.apiUrl);
-      const envDiffers = envUrl && envUrl.trim() !== '' && envUrl !== dbCred.apiUrl;
-      let effectiveApiUrl = dbCred.apiUrl;
-      if (dbLooksStale && envDiffers) {
-        effectiveApiUrl = envUrl!;
-        try {
-          await prisma.bkdsCredential.update({
-            where: { organizationId: this.organizationId },
-            data: { apiUrl: effectiveApiUrl },
-          });
-          console.log(`[BKDS][${this.organizationId}] apiUrl migrate edildi: ${dbCred.apiUrl} → ${effectiveApiUrl}`);
-        } catch (e) {
-          console.warn(`[BKDS][${this.organizationId}] apiUrl migrate başarısız:`, e);
-        }
-      }
-
       this.creds = {
-        apiUrl: effectiveApiUrl,
+        apiUrl: dbCred.apiUrl,
         username: dbCred.username,
         password: dbCred.password,
         cityId: dbCred.cityId,
@@ -117,7 +98,7 @@ export class BkdsProviderService {
     } else {
       // Geriye dönük uyumluluk: .env'den oku
       this.creds = {
-        apiUrl: process.env.BKDS_API_URL ?? 'http://192.168.1.154:3000',
+        apiUrl: process.env.BKDS_API_URL ?? 'https://bkds-api.meb.gov.tr',
         username: process.env.BKDS_USERNAME ?? '',
         password: process.env.BKDS_PASSWORD ?? '',
         cityId: process.env.BKDS_CITY_ID ?? '',
@@ -126,7 +107,6 @@ export class BkdsProviderService {
       };
     }
 
-    console.log(`[BKDS][${this.organizationId}] apiUrl=${this.creds.apiUrl}`);
     return this.creds;
   }
 
