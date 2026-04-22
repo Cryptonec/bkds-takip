@@ -226,6 +226,19 @@ function useBildirimEkrani(sesAcik: boolean) {
 
       isFirst.current = false;
       setSonGuncelleme(new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}));
+      if (typeof window !== 'undefined') {
+        const personelInResp = [
+          ...personelRows.filter((r:any) => r.baslamaZamani).map((r:any) => `PR:${r.ogretmenAdi}`),
+          ...tumPersonel.filter((p:any) => p.ilkGiris).map((p:any) => `TP:${p.ogretmenAdi}`),
+        ];
+        console.debug('[ekran poll]',
+          new Date().toLocaleTimeString(),
+          'girisMap:', girisMapRef.current.size,
+          'cikisMap:', cikisMapRef.current.size,
+          'personel in response:', personelInResp,
+          'new entries this poll:', yeniGirisler.length, '(', eklenenGirisler.map(k => k.ad).join(','), ')',
+        );
+      }
     } catch(e) { console.error('[Ekran]', e); }
   }, []);
 
