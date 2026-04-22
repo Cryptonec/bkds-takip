@@ -90,7 +90,7 @@ model BkdsCredential {
   id             String       @id @default(cuid())
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   organizationId String       @unique
-  apiUrl         String       @default("https://bkds-api.meb.gov.tr")
+  apiUrl         String       @default("http://192.168.1.154:3000")
   username       String
   password       String       // bcrypt şifreli
   cityId         String

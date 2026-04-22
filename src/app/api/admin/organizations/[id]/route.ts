@@ -13,12 +13,13 @@ function requireSuperAdmin(session: any) {
 const updateSchema = z.object({
   name: z.string().min(2).optional(),
   active: z.boolean().optional(),
+  bkdsApiUrl: z.string().url().optional(),
   bkdsUsername: z.string().optional(),
   bkdsPassword: z.string().optional(),
   bkdsCityId: z.string().optional(),
   bkdsDistrictId: z.string().optional(),
   bkdsRemId: z.string().optional(),
-  pollInterval: z.number().int().min(10000).optional(),
+  pollInterval: z.number().int().min(1000).optional(),
   subscriptionStatus: z.enum(['aktif', 'pasif', 'deneme', 'iptal']).optional(),
   plan: z.enum(['temel', 'profesyonel', 'kurumsal']).optional(),
 });
@@ -35,7 +36,7 @@ export async function GET(
     where: { id: params.id },
     include: {
       subscription: true,
-      bkdsCredential: { select: { username: true, cityId: true, districtId: true, remId: true, pollInterval: true } },
+      bkdsCredential: { select: { apiUrl: true, username: true, cityId: true, districtId: true, remId: true, pollInterval: true } },
       _count: { select: { users: true, students: true, staff: true } },
     },
   });
@@ -58,7 +59,7 @@ export async function PATCH(
 
   const {
     name, active,
-    bkdsUsername, bkdsPassword, bkdsCityId, bkdsDistrictId, bkdsRemId, pollInterval,
+    bkdsApiUrl, bkdsUsername, bkdsPassword, bkdsCityId, bkdsDistrictId, bkdsRemId, pollInterval,
     subscriptionStatus, plan,
   } = parsed.data;
 
@@ -71,11 +72,12 @@ export async function PATCH(
   }
 
   // BKDS kimlik bilgilerini güncelle
-  if (bkdsUsername || bkdsPassword || bkdsCityId || bkdsDistrictId || bkdsRemId || pollInterval) {
+  if (bkdsApiUrl || bkdsUsername || bkdsPassword || bkdsCityId || bkdsDistrictId || bkdsRemId || pollInterval) {
     await prisma.bkdsCredential.upsert({
       where: { organizationId: params.id },
       create: {
         organizationId: params.id,
+        apiUrl: bkdsApiUrl ?? undefined,
         username: bkdsUsername ?? '',
         password: bkdsPassword ?? '',
         cityId: bkdsCityId ?? '',
@@ -84,6 +86,7 @@ export async function PATCH(
         pollInterval: pollInterval ?? 60000,
       },
       update: {
+        ...(bkdsApiUrl ? { apiUrl: bkdsApiUrl } : {}),
         ...(bkdsUsername ? { username: bkdsUsername } : {}),
         ...(bkdsPassword ? { password: bkdsPassword } : {}),
         ...(bkdsCityId ? { cityId: bkdsCityId } : {}),
