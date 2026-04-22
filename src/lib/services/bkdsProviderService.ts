@@ -288,17 +288,38 @@ export class BkdsProviderService {
       ex.push(r);
       bireyMap.set(r.individual_full_name, ex);
     }
+    let ogrEslesen = 0, ogrEslesemeyen = 0;
+    const eslesemeyenIsimler: string[] = [];
     for (const [maskedName, recs] of bireyMap.entries()) {
       const ilkGiris = new Date(Math.min(...recs.map(r => new Date(r.first_entry).getTime())));
       const cikislar = recs.filter(r => r.last_exit).map(r => new Date(r.last_exit!).getTime());
       const sonCikis = cikislar.length > 0 ? new Date(Math.max(...cikislar)) : null;
-      const student = allStudents.find(s => matchMaskedName(maskedName, s.adSoyad));
+      // 1) Önce tam/maskeli eşleşme (mevcut), 2) Olmazsa fuzzy prefix eşleşme
+      let student = allStudents.find(s => matchMaskedName(maskedName, s.adSoyad));
+      if (!student) {
+        const fuzzy = allStudents
+          .map(s => ({ s, r: matchMaskedNameFuzzy(maskedName, s.adSoyad) }))
+          .filter(x => x.r.type === 'prefix_eslesme')
+          .sort((a, b) => b.r.score - a.r.score);
+        if (fuzzy.length === 1) student = fuzzy[0].s;
+      }
       if (student) {
+        ogrEslesen++;
         await prisma.bkdsAggregate.upsert({
           where: { studentId_tarih: { studentId: student.id, tarih: dateOnly } },
           create: { organizationId: orgId, studentId: student.id, tarih: dateOnly, adSoyad: maskedName, ilkGiris, sonCikis },
           update: { adSoyad: maskedName, ilkGiris, sonCikis },
         });
+      } else {
+        ogrEslesemeyen++;
+        if (eslesemeyenIsimler.length < 5) eslesemeyenIsimler.push(maskedName);
+      }
+    }
+    console.log(`[BKDS][${orgId}] Öğrenci eşleşme — eşleşen: ${ogrEslesen}, eşleşemeyen: ${ogrEslesemeyen}`);
+    if (eslesemeyenIsimler.length > 0) {
+      console.log(`[BKDS][${orgId}] Eşleşemeyen öğrenci örnekleri:`, eslesemeyenIsimler);
+      if (allStudents.length > 0) {
+        console.log(`[BKDS][${orgId}] Örnek Student.adSoyad:`, allStudents.slice(0, 3).map(s => s.adSoyad));
       }
     }
 
