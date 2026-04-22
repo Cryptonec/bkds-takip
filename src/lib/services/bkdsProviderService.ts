@@ -181,11 +181,13 @@ export class BkdsProviderService {
   }
 
   async fetchToday(): Promise<BkdsApiRecord[]> {
-    const now = new Date();
-    const todayTR = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Istanbul' }));
-    todayTR.setHours(0, 0, 0, 0);
-    const startUTC = new Date(todayTR.getTime() - 3 * 60 * 60 * 1000);
-    const endUTC = new Date(startUTC.getTime() + 24 * 60 * 60 * 1000 - 1000);
+    // Türkiye (UTC+3) gününü server timezone'dan bağımsız olarak hesapla:
+    // - "Bugün TR" = TR 00:00 → TR 23:59:59
+    // - UTC'ye çevir: TR 00:00 = UTC önceki gün 21:00 ; TR 23:59:59 = UTC bugün 20:59:59
+    const trStr = new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Istanbul' });
+    const todayStr = trStr.split(' ')[0]; // "YYYY-MM-DD"
+    const startUTC = new Date(`${todayStr}T00:00:00.000+03:00`);
+    const endUTC   = new Date(`${todayStr}T23:59:59.999+03:00`);
     return this.fetchByTimeRange(startUTC.toISOString(), endUTC.toISOString());
   }
 
