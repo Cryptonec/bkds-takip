@@ -406,20 +406,21 @@ function Sutun({
           <p className={`text-xs ${altMetin}`}>{altBaslik}</p>
         </div>
         <span className={`ml-auto text-xs tabular-nums ${altMetin}`}>
-          {isFullscreen ? toplamKayit : Math.min(kayitlar.length, MAX_NORMAL)} kayıt
-          {isFullscreen && toplamKayit > kayitlar.length ? ` / ${toplamKayit}` : ''}
+          {kayitlar.length} kayıt
+          {isFullscreen && toplamKayit !== kayitlar.length ? ` / ${toplamKayit}` : ''}
         </span>
       </div>
-      <div className={`flex-1 flex flex-col gap-2 px-3 py-2 min-h-0 ${isFullscreen ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+      <div className={`flex-1 flex flex-col gap-1.5 px-3 py-2 min-h-0 ${isFullscreen ? 'overflow-y-auto' : 'overflow-hidden'}`}>
         {kayitlar.length === 0 ? (
           <div className="flex-1 flex items-center justify-center">
             <p className="text-gray-700 text-3xl">—</p>
           </div>
         ) : (
-          kayitlar.map(k => (
+          kayitlar.map((k, i) => (
             <BildirimsalKart
               key={k.id}
               kayit={k}
+              index={i}
               isFullscreen={isFullscreen}
               yeni={yeniIds.has(k.id)}
             />
@@ -430,29 +431,71 @@ function Sutun({
   );
 }
 
-function BildirimsalKart({ kayit, isFullscreen, yeni }: { kayit: Kayit; isFullscreen: boolean; yeni: boolean }) {
-  const isGiris = kayit.tip === 'giris';
-  const kartBg = isGiris
-    ? 'bg-green-800 border-2 border-green-500 shadow-lg shadow-green-950/40'
-    : 'bg-orange-800 border-2 border-orange-500 shadow-lg shadow-orange-950/40';
-  const ikonBg = kayit.tur === 'ogrenci' ? 'bg-blue-500' : 'bg-purple-500';
+// Pozisyon-bazlı görsel hiyerarşi: en üstteki kart en vurgulu, aşağıdakiler soluklaşır.
+// Giriş/çıkış aynı index için aynı boyutu kullanır — iki sütun simetrik görünür.
+const SEVIYE = [
+  { girisKart: 'bg-green-700 border-2 border-green-400 shadow-lg shadow-green-900/40',
+    cikisKart: 'bg-orange-700 border-2 border-orange-400 shadow-lg shadow-orange-900/40',
+    ogrenciIkon: 'bg-blue-500', personelIkon: 'bg-purple-500',
+    metin: 'text-white', saat: 'text-white/80',
+    ad: 'text-3xl', saatSize: 'text-2xl', ikon: 'w-14 h-14', ikonSvg: 'w-6 h-6',
+    fsAd: 'text-5xl', fsSaat: 'text-4xl', fsIkon: 'w-20 h-20', fsIkonSvg: 'w-9 h-9',
+    fsMinH: 'min-h-[7rem]' },
+  { girisKart: 'bg-green-900/80 border border-green-600',
+    cikisKart: 'bg-orange-900/80 border border-orange-600',
+    ogrenciIkon: 'bg-blue-600', personelIkon: 'bg-purple-600',
+    metin: 'text-green-100', saat: 'text-green-300',
+    ad: 'text-2xl', saatSize: 'text-xl', ikon: 'w-12 h-12', ikonSvg: 'w-6 h-6',
+    fsAd: 'text-4xl', fsSaat: 'text-3xl', fsIkon: 'w-16 h-16', fsIkonSvg: 'w-8 h-8',
+    fsMinH: 'min-h-[6rem]' },
+  { girisKart: 'bg-green-950/50 border border-green-800/40',
+    cikisKart: 'bg-orange-950/50 border border-orange-800/40',
+    ogrenciIkon: 'bg-blue-700', personelIkon: 'bg-purple-700',
+    metin: 'text-green-300', saat: 'text-green-500',
+    ad: 'text-xl', saatSize: 'text-lg', ikon: 'w-11 h-11', ikonSvg: 'w-5 h-5',
+    fsAd: 'text-3xl', fsSaat: 'text-2xl', fsIkon: 'w-14 h-14', fsIkonSvg: 'w-7 h-7',
+    fsMinH: 'min-h-[5rem]' },
+  { girisKart: 'bg-gray-900/50 border border-gray-700',
+    cikisKart: 'bg-gray-900/50 border border-gray-700',
+    ogrenciIkon: 'bg-gray-600', personelIkon: 'bg-gray-600',
+    metin: 'text-gray-400', saat: 'text-gray-500',
+    ad: 'text-lg', saatSize: 'text-base', ikon: 'w-10 h-10', ikonSvg: 'w-5 h-5',
+    fsAd: 'text-2xl', fsSaat: 'text-xl', fsIkon: 'w-12 h-12', fsIkonSvg: 'w-6 h-6',
+    fsMinH: 'min-h-[4.5rem]' },
+  { girisKart: 'bg-gray-900/20 border border-gray-800',
+    cikisKart: 'bg-gray-900/20 border border-gray-800',
+    ogrenciIkon: 'bg-gray-800', personelIkon: 'bg-gray-800',
+    metin: 'text-gray-500', saat: 'text-gray-600',
+    ad: 'text-base', saatSize: 'text-sm', ikon: 'w-9 h-9', ikonSvg: 'w-4 h-4',
+    fsAd: 'text-xl', fsSaat: 'text-lg', fsIkon: 'w-11 h-11', fsIkonSvg: 'w-5 h-5',
+    fsMinH: 'min-h-[4rem]' },
+];
 
-  // Normal modda kartlar flex-1 ile alanı doldurur; tam ekranda sabit yükseklik + scroll.
+function BildirimsalKart({ kayit, index, isFullscreen, yeni }: {
+  kayit: Kayit; index: number; isFullscreen: boolean; yeni: boolean;
+}) {
+  const isGiris = kayit.tip === 'giris';
+  const s = SEVIYE[Math.min(index, SEVIYE.length - 1)];
+  const kart = isGiris ? s.girisKart : s.cikisKart;
+  const ikonBg = kayit.tur === 'ogrenci' ? s.ogrenciIkon : s.personelIkon;
+  const Icon = isGiris ? UserCheck : LogOut;
+
+  // Normal modda cards flex-1 ile sütunu doldurur; tam ekranda sabit min-height + scroll.
   const boyut = isFullscreen
-    ? { kart: 'h-24 px-6', ad: 'text-4xl', saat: 'text-3xl', ikon: 'w-16 h-16', ikonSvg: 'w-8 h-8' }
-    : { kart: 'flex-1 px-5', ad: 'text-2xl', saat: 'text-xl', ikon: 'w-12 h-12', ikonSvg: 'w-6 h-6' };
+    ? { kutu: `${s.fsMinH} px-6`, ad: s.fsAd, saat: s.fsSaat, ikon: s.fsIkon, ikonSvg: s.fsIkonSvg }
+    : { kutu: 'flex-1 px-5',      ad: s.ad,   saat: s.saatSize, ikon: s.ikon, ikonSvg: s.ikonSvg };
 
   return (
     <div
-      className={`flex items-center gap-4 rounded-xl shrink-0 min-h-0 transition-all duration-300 ${boyut.kart} ${kartBg} ${yeni ? 'animate-pop-in animate-glow-ring ring-4 ring-white/40' : ''}`}
+      className={`flex items-center gap-4 rounded-xl shrink-0 transition-all duration-500 min-h-0 ${boyut.kutu} ${kart} ${yeni ? 'animate-pop-in animate-glow-ring ring-4 ring-white/40' : ''}`}
     >
       <div className={`rounded-full flex items-center justify-center shrink-0 ${ikonBg} ${boyut.ikon}`}>
-        <UserCheck className={`text-white ${boyut.ikonSvg}`} />
+        <Icon className={`text-white ${boyut.ikonSvg}`} />
       </div>
-      <p className={`font-black flex-1 min-w-0 truncate text-white ${boyut.ad}`} title={kayit.ad}>
+      <p className={`font-black flex-1 min-w-0 truncate ${boyut.ad} ${s.metin}`} title={kayit.ad}>
         {kayit.ad}
       </p>
-      <p className={`font-bold tabular-nums shrink-0 text-white/80 ${boyut.saat}`}>{kayit.saat}</p>
+      <p className={`font-bold tabular-nums shrink-0 ${boyut.saat} ${s.saat}`}>{kayit.saat}</p>
     </div>
   );
 }
