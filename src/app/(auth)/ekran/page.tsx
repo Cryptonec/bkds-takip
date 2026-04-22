@@ -216,12 +216,16 @@ function useBildirimEkrani(sesAcik: boolean) {
       setGirisler(sortedGiris);
       setCikislar(sortedCikis);
 
-      // Ses + animasyon — ilk poll olmadığı sürece yeni kayıtlar için
+      // Ses + animasyon — sadece SON 2 DAKİKA içinde olan kayıtlar için
+      // (stale entries'i yeni gibi göstermeyi/seslendirmeyi önler)
+      const yakin = (k: Kayit) => Date.now() - k.ts < 2 * 60 * 1000;
       if (!isFirst.current) {
-        const enYeniGiris = [...eklenenGirisler].sort((a,b) => b.ts - a.ts)[0];
-        const enYeniCikis = [...eklenenCikislar].sort((a,b) => b.ts - a.ts)[0];
-        eklenenGirisler.forEach(k => markYeni(k.id));
-        eklenenCikislar.forEach(k => markYeni(k.id));
+        const yeniSesliGirisler = eklenenGirisler.filter(yakin);
+        const yeniSesliCikislar = eklenenCikislar.filter(yakin);
+        const enYeniGiris = [...yeniSesliGirisler].sort((a,b) => b.ts - a.ts)[0];
+        const enYeniCikis = [...yeniSesliCikislar].sort((a,b) => b.ts - a.ts)[0];
+        yeniSesliGirisler.forEach(k => markYeni(k.id));
+        yeniSesliCikislar.forEach(k => markYeni(k.id));
         if (enYeniGiris && sesAcikRef.current) {
           calarGiris();
           setTimeout(() => seslendir(enYeniGiris), 400);

@@ -169,7 +169,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
 
       // Tüm personel girişlerini tek bir haritada topla
       // key = staffId (varsa) veya ogretmenAdi
-      const tumGirisMap = new Map<string, { ad: string; derslik?: string; cikisVar: boolean }>();
+      const tumGirisMap = new Map<string, { ad: string; derslik?: string; cikisVar: boolean; girisTs: number; cikisTs: number }>();
 
       // personelRows'tan
       for (const r of json.personelRows) {
@@ -178,6 +178,8 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
             ad: r.ogretmenAdi,
             derslik: r.derslik,
             cikisVar: !!(r.sonCikisZamani || now > new Date(r.bitis)),
+            girisTs: new Date(r.baslamaZamani).getTime(),
+            cikisTs: r.sonCikisZamani ? new Date(r.sonCikisZamani).getTime() : 0,
           });
         }
       }
@@ -188,21 +190,30 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
           tumGirisMap.set(key, {
             ad: p.ogretmenAdi,
             cikisVar: !!p.sonCikis,
+            girisTs: p.ilkGiris ? new Date(p.ilkGiris).getTime() : 0,
+            cikisTs: p.sonCikis ? new Date(p.sonCikis).getTime() : 0,
           });
         }
       }
 
+      // Ses sadece SON 2 DK içinde gerçekleşen kayıtlar için — stale veriye
+      // "güle güle" demeyi önler (server restart / ilk açılış / HMR vs.)
+      const SES_ESIK_MS = 2 * 60 * 1000;
+      const simdi = Date.now();
+      const yakinZaman = (ts: number) => ts > 0 && simdi - ts < SES_ESIK_MS;
+
       if (!isFirstFetch.current) {
         // --- Yeni personel girişleri ---
-        const yeniPG: Array<{id:string;ad:string;derslik?:string}> = [];
+        const yeniPG: Array<{id:string;ad:string;derslik?:string;ts:number}> = [];
         for (const [key, val] of tumGirisMap.entries()) {
           if (!prevTumGirisKeys.current.has(key)) {
-            yeniPG.push({ id: key, ad: val.ad, derslik: val.derslik });
+            yeniPG.push({ id: key, ad: val.ad, derslik: val.derslik, ts: val.girisTs });
           }
         }
         if (yeniPG.length > 0) {
           setYeniPersonelGiris(yeniPG);
           yeniPG.forEach(p => {
+            if (!yakinZaman(p.ts)) return;
             playBeep('personel_giris');
             setTimeout(() => speak(`Sayın ${p.ad}, hoş geldiniz`), 400);
           });
@@ -210,15 +221,16 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
         }
 
         // --- Yeni personel çıkışları ---
-        const yeniPC: Array<{id:string;ad:string;derslik?:string}> = [];
+        const yeniPC: Array<{id:string;ad:string;derslik?:string;ts:number}> = [];
         for (const [key, val] of tumGirisMap.entries()) {
           if (val.cikisVar && prevTumGirisKeys.current.has(key) && !prevTumCikisKeys.current.has(key)) {
-            yeniPC.push({ id: key, ad: val.ad, derslik: val.derslik });
+            yeniPC.push({ id: key, ad: val.ad, derslik: val.derslik, ts: val.cikisTs });
           }
         }
         if (yeniPC.length > 0) {
           setYeniPersonelCikis(yeniPC);
           yeniPC.forEach(p => {
+            if (!yakinZaman(p.ts)) return;
             playBeep('personel_cikis');
             setTimeout(() => speak(`Sayın ${p.ad}, güle güle`), 400);
           });
@@ -232,6 +244,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
         if (yeniG.length > 0) {
           setYeniGirisler(yeniG);
           yeniG.forEach(r => {
+            if (!yakinZaman(new Date(r.gercekGiris!).getTime())) return;
             playBeep('giris');
             setTimeout(() => speak(`${r.ogrenciAdi}, hoş geldiniz`), 400);
           });
@@ -245,6 +258,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
         if (yeniC.length > 0) {
           setYeniCikislar(yeniC);
           yeniC.forEach(r => {
+            if (!yakinZaman(new Date(r.gercekCikis!).getTime())) return;
             playBeep('cikis');
             setTimeout(() => speak(`${r.ogrenciAdi}, güle güle`), 400);
           });
