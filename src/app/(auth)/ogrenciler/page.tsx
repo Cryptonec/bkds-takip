@@ -156,7 +156,8 @@ export default function OgrencilerPage() {
           <FileSpreadsheet className="w-3.5 h-3.5" /> Hangi dosyayı yükleyebilirsin?
         </p>
         <ul className="list-disc list-inside space-y-0.5">
-          <li><strong>Lila yoklama .xls</strong> — direkt indirdiğin dosyayı at, öğrenci isimleri otomatik çıkarılır</li>
+          <li><strong>BRY öğrenci listesi Excel</strong> — ADI / SOYADI / T.C. KİMLİK NO / ÖĞRENCİ NO kolonları otomatik tanınır, başlık satırları atlanır</li>
+          <li><strong>Lila yoklama .xls</strong> — yoklamadan öğrenci isimleri çekilir (her öğrenci tek kez)</li>
           <li><strong>Standart Excel/CSV</strong> — başlık satırı: <code className="bg-blue-100 px-1 rounded">Ad Soyad</code></li>
           <li><strong>Tek sütun isim listesi</strong> — sadece adların alt alta olduğu .xlsx</li>
         </ul>

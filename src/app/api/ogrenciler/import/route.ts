@@ -6,18 +6,25 @@ import { normalizeName } from '@/lib/utils/normalize';
 import * as XLSX from 'xlsx';
 
 /**
- * Toplu öğrenci yükleme. Üç formatı otomatik tanır:
+ * Toplu öğrenci yükleme. Birden fazla formatı otomatik tanır:
  *
- * 1) Lila yoklama HTML XLS — Lila'dan indirilen .xls aslında HTML.
- *    Hücre dizilimi: [no, tarih, saat, OGRENCI ADI, ?, derslik, ogretmen, ...]
- *    Öğrenci adı 4. sütunda (index 3).
+ * 1) Lila yoklama HTML XLS — .xls aslında HTML; tablodan öğrenci adları çıkarılır
+ *    (cells[3]).
  *
- * 2) Standart Excel/CSV — başlık satırı 'Ad Soyad' / 'Öğrenci Adı' / 'İsim' vs.
+ * 2) BRY öğrenci listesi Excel — başlık satırları öncesinde "ÖĞRENCİ LİSTESİ"
+ *    gibi title olabilir, header satırı tespit edilir, ADI + SOYADI ayrı
+ *    kolonlardan birleştirilir, TC + Öğrenci No varsa eklenir.
  *
- * 3) Tek sütunlu Excel/CSV — sadece isim listesi, başlık opsiyonel.
- *
- * Tüm formatlarda mevcut öğrenci varsa atlanır (duplicate olmaz).
+ * 3) Standart tek-kolon Excel/CSV — "Ad Soyad" başlıklı veya başlıksız tek
+ *    kolon isim listesi.
  */
+
+interface OgrenciKaydi {
+  adSoyad: string;
+  ogrenciNo: string | null;
+  tc: string | null;
+}
+
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
@@ -29,67 +36,55 @@ export async function POST(req: NextRequest) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  let isimler: string[] = [];
+  let kayitlar: OgrenciKaydi[] = [];
   let formatTipi = 'bilinmeyen';
 
-  // 1) Lila HTML XLS denetimi — buffer'ın başı '<' (HTML) ile başlıyorsa
+  // 1) Lila HTML XLS denetimi
   const head = buffer.slice(0, 200).toString('utf-8').trim().toLowerCase();
   if (head.startsWith('<') && (head.includes('<table') || head.includes('<html') || head.includes('<tr'))) {
-    isimler = extractFromLilaHtmlXls(buffer);
+    kayitlar = extractFromLilaHtmlXls(buffer);
     formatTipi = 'lila-html-xls';
   } else {
-    // 2/3) Standart Excel/CSV — xlsx ile parse et
+    // 2/3) Standart Excel — header tespiti ile
     try {
       const wb = XLSX.read(buffer, { type: 'buffer' });
       const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '' });
-
-      if (rows.length > 0) {
-        for (const row of rows) {
-          const ad = pickField(row, [
-            'Ad Soyad', 'Adi Soyadi', 'AdSoyad', 'Ad', 'Öğrenci Adı', 'Ogrenci Adi',
-            'Öğrenci', 'Ogrenci', 'İsim', 'Isim', 'Name', 'Full Name',
-          ]);
-          if (ad) isimler.push(ad);
-        }
-        formatTipi = 'excel-baslikli';
-      }
-
-      // Eğer başlıklı format'tan hiç isim çıkmadıysa, tek sütunlu olabilir — header'sız parse et
-      if (isimler.length === 0) {
-        const arr = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '' });
-        for (const row of arr) {
-          const ad = String(row?.[0] ?? '').trim();
-          if (ad && ad.length >= 2 && !isHeader(ad)) isimler.push(ad);
-        }
-        if (isimler.length > 0) formatTipi = 'tek-sutun';
-      }
+      const result = parseTabularExcel(sheet);
+      kayitlar = result.kayitlar;
+      formatTipi = result.formatTipi;
     } catch (err: any) {
       return NextResponse.json({ error: `Excel/CSV okunamadı: ${err.message}` }, { status: 400 });
     }
   }
 
-  if (isimler.length === 0) {
+  if (kayitlar.length === 0) {
     return NextResponse.json({
-      error: 'Dosya tanınamadı veya hiç öğrenci ismi bulunamadı. Lila yoklama .xls\'ini ya da "Ad Soyad" sütunlu Excel/CSV yükleyin.',
+      error: 'Dosya tanınamadı veya hiç öğrenci ismi bulunamadı. Lila yoklama .xls\'i, BRY öğrenci listesi Excel\'i ya da "Ad Soyad" sütunlu Excel/CSV yükleyin.',
       formatTipi,
     }, { status: 400 });
   }
 
-  // Tekrarları temizle (aynı dosyada aynı öğrenci birden çok kez gelebilir — Lila'da her ders bir satır)
-  const benzersiz = Array.from(new Set(isimler.map(s => s.trim()).filter(Boolean)));
+  // İsim+soyad'a göre benzersizleştir (aynı dosyada tekrar varsa)
+  const seen = new Set<string>();
+  const benzersiz: OgrenciKaydi[] = [];
+  for (const k of kayitlar) {
+    const key = normalizeName(k.adSoyad);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    benzersiz.push(k);
+  }
 
   let eklenen = 0;
   let atlanan = 0;
   const errors: Array<{ row: number; reason: string }> = [];
 
   for (let i = 0; i < benzersiz.length; i++) {
-    const adSoyad = benzersiz[i];
-    if (adSoyad.length < 2) {
-      errors.push({ row: i + 1, reason: `Çok kısa: '${adSoyad}'` });
+    const k = benzersiz[i];
+    if (!k.adSoyad || k.adSoyad.length < 2) {
+      errors.push({ row: i + 1, reason: `Çok kısa: '${k.adSoyad}'` });
       continue;
     }
-    const normName = normalizeName(adSoyad);
+    const normName = normalizeName(k.adSoyad);
     try {
       const existing = await prisma.student.findFirst({
         where: { organizationId: orgId, normalizedName: normName },
@@ -101,8 +96,10 @@ export async function POST(req: NextRequest) {
       await prisma.student.create({
         data: {
           organizationId: orgId,
-          adSoyad,
+          adSoyad: k.adSoyad,
           normalizedName: normName,
+          ogrenciNo: k.ogrenciNo,
+          tc: k.tc,
         },
       });
       eklenen++;
@@ -121,44 +118,113 @@ export async function POST(req: NextRequest) {
   });
 }
 
-/** Lila'nın HTML formatındaki .xls dosyasından öğrenci isimlerini çek. */
-function extractFromLilaHtmlXls(buffer: Buffer): string[] {
+/** Lila yoklama HTML XLS — cells[3] = öğrenci adı (tam ad). */
+function extractFromLilaHtmlXls(buffer: Buffer): OgrenciKaydi[] {
   const content = buffer.toString('utf-8');
   const rowMatches = content.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) ?? [];
-  const isimler: string[] = [];
+  const out: OgrenciKaydi[] = [];
 
   for (const rowHtml of rowMatches) {
     const cells = (rowHtml.match(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi) ?? [])
       .map((cell) => cell.replace(/<[^>]+>/g, '').trim());
 
     if (cells.length < 4) continue;
-    // Lila yoklama satırı: ilk hücre numara, ikinci tarih (DD.MM.YYYY)
     if (!/^\d+$/.test(cells[0])) continue;
     if (!/\d{2}\.\d{2}\.\d{4}/.test(cells[1] ?? '')) continue;
 
     const ad = (cells[3] ?? '').trim();
-    if (ad && ad.length >= 2) isimler.push(ad);
-  }
-  return isimler;
-}
-
-function pickField(row: Record<string, any>, candidates: string[]): string {
-  const normalized = (s: string) => s.toLowerCase().replace(/[^a-z0-9ığüşöç]/gi, '');
-  const keys = Object.keys(row).map(k => [k, normalized(k)] as const);
-  for (const c of candidates) {
-    const cNorm = normalized(c);
-    const match = keys.find(([, k]) => k === cNorm);
-    if (match) {
-      const val = row[match[0]];
-      if (val !== undefined && val !== null && String(val).trim() !== '') {
-        return String(val).trim();
-      }
+    if (ad && ad.length >= 2) {
+      out.push({ adSoyad: ad, ogrenciNo: null, tc: null });
     }
   }
-  return '';
+  return out;
 }
 
-function isHeader(s: string): boolean {
-  const lo = s.toLowerCase();
-  return ['ad', 'soyad', 'adı', 'adi', 'isim', 'name', 'öğrenci', 'ogrenci'].some(h => lo === h || lo.includes(h + ' '));
+/**
+ * Tabular Excel parse:
+ *  - Header satırını tespit eder (içinde 'ADI' / 'AD SOYAD' / 'İSİM' geçen ilk satır)
+ *  - ADI + SOYADI kolonları varsa birleştirir
+ *  - TEK 'AD SOYAD' kolonu varsa direkt kullanır
+ *  - TC + Öğrenci No kolonları varsa çıkarır
+ */
+function parseTabularExcel(sheet: XLSX.WorkSheet): { kayitlar: OgrenciKaydi[]; formatTipi: string } {
+  const rawRows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '' });
+  if (rawRows.length === 0) return { kayitlar: [], formatTipi: 'bos' };
+
+  const norm = (s: any) => String(s ?? '').toLowerCase().trim()
+    .replace(/[._]/g, ' ').replace(/\s+/g, ' ');
+
+  // Header satırı ara — ilk 10 satırda 'ADI' veya 'AD' geçen
+  const adKeywords = ['adi', 'ad', 'ad soyad', 'adi soyadi', 'isim', 'name', 'öğrenci adı', 'ogrenci adi', 'öğrenci', 'ogrenci'];
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rawRows.length, 15); i++) {
+    const cells = (rawRows[i] ?? []).map(norm);
+    if (cells.some(c => adKeywords.includes(c))) {
+      headerIdx = i;
+      break;
+    }
+  }
+
+  if (headerIdx === -1) {
+    // Header yok — tek sütun isim listesi varsayımı
+    const out: OgrenciKaydi[] = [];
+    for (const row of rawRows) {
+      const v = String(row?.[0] ?? '').trim();
+      if (v && v.length >= 2 && !adKeywords.includes(norm(v))) {
+        out.push({ adSoyad: v, ogrenciNo: null, tc: null });
+      }
+    }
+    return { kayitlar: out, formatTipi: 'tek-sutun-headersiz' };
+  }
+
+  // Header'dan kolon indexlerini topla
+  const headerRow = rawRows[headerIdx] as any[];
+  const colMap = new Map<string, number>();
+  headerRow.forEach((cell, idx) => {
+    const k = norm(cell);
+    if (k && !colMap.has(k)) colMap.set(k, idx);
+  });
+
+  const findCol = (...keys: string[]): number => {
+    for (const k of keys) {
+      const idx = colMap.get(norm(k));
+      if (idx !== undefined) return idx;
+    }
+    return -1;
+  };
+
+  const adIdx = findCol('adi', 'ad', 'ad soyad', 'adi soyadi', 'isim', 'name', 'öğrenci adı', 'ogrenci adi', 'öğrenci', 'ogrenci');
+  const soyadIdx = findCol('soyadi', 'soyad', 'surname', 'last name');
+  const noIdx = findCol('öğrenci no', 'ogrenci no', 'no', 'numara', 'student no');
+  const tcIdx = findCol('t c kimlik no', 't c kimlik', 'tc kimlik no', 'tc kimlik', 'tc', 'tckn', 'kimlik no');
+
+  const kayitlar: OgrenciKaydi[] = [];
+  for (let i = headerIdx + 1; i < rawRows.length; i++) {
+    const row = rawRows[i] ?? [];
+    let adSoyad = '';
+    if (adIdx >= 0 && soyadIdx >= 0) {
+      const a = String(row[adIdx] ?? '').trim();
+      const s = String(row[soyadIdx] ?? '').trim();
+      if (a && s) adSoyad = `${a} ${s}`;
+      else if (a) adSoyad = a;
+      else if (s) adSoyad = s;
+    } else if (adIdx >= 0) {
+      adSoyad = String(row[adIdx] ?? '').trim();
+    }
+
+    if (!adSoyad || adSoyad.length < 2) continue;
+
+    const ogrenciNoRaw = noIdx >= 0 ? String(row[noIdx] ?? '').trim() : '';
+    const ogrenciNo = ogrenciNoRaw && ogrenciNoRaw !== '0' ? ogrenciNoRaw : null;
+
+    const tcRaw = tcIdx >= 0 ? String(row[tcIdx] ?? '').trim().replace(/\s/g, '') : '';
+    const tc = /^\d{11}$/.test(tcRaw) ? tcRaw : null;
+
+    kayitlar.push({ adSoyad, ogrenciNo, tc });
+  }
+
+  const formatTipi = (adIdx >= 0 && soyadIdx >= 0)
+    ? 'excel-ad-soyad-ayri'
+    : 'excel-tek-kolon';
+  return { kayitlar, formatTipi };
 }
