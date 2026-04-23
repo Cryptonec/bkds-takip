@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useState, useEffect, useMemo } from 'react';
 import { useLiveAttendance } from '@/lib/hooks/useLiveAttendance';
 import { OgrenciPaneli, StatusSummaryBar } from '@/components/canli/OgrenciPaneli';
@@ -9,7 +10,7 @@ import { TumBildirimler } from '@/components/canli/TumBildirimler';
 import { DersEkleModal } from '@/components/canli/DersEkleModal';
 import {
   RefreshCw, Wifi, WifiOff, AlertTriangle, LogOut, UserCheck, GraduationCap, Plus,
-  Bell, Maximize2, Minimize2, X,
+  Bell, Maximize2, Minimize2, X, Upload, CalendarDays, Tv2,
 } from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
 
@@ -161,9 +162,15 @@ export default function CanliPage() {
     });
   }
 
+  // Bugünün yoklama listesi yüklenmemişse canlı takip boş kalır.
+  // !loading + data var + hiç ders yok → engelleyici modal göster.
+  const yoklamaYuklenmemis = !loading && data && data.ogrenciRows.length === 0;
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       <BildirimPanel bildirimler={yeniBildirimler} onDismiss={dismissBildirim} />
+
+      {yoklamaYuklenmemis && <YoklamaGateModal />}
 
       {/* Hata toast — fullscreen-güvenli (alert/confirm kullanmaz) */}
       {errorToast && (
@@ -414,6 +421,54 @@ export default function CanliPage() {
           </aside>
         </>
       )}
+    </div>
+  );
+}
+
+function YoklamaGateModal() {
+  return (
+    <div className="fixed inset-0 z-[70] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-6">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+        <div className="bg-gradient-to-br from-blue-600 to-blue-700 px-6 py-6 flex items-center gap-4">
+          <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+            <CalendarDays className="w-8 h-8 text-white" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-white">Bugünün Yoklama Listesi Yüklenmemiş</h2>
+            <p className="text-sm text-blue-100 mt-0.5">Canlı takip için ders programı gerekli</p>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-gray-700 leading-relaxed">
+            Canlı takip sekmesi öğrencilerin giriş-çıkışlarını ders programıyla eşleştirerek gösterir.
+            Bugüne ait herhangi bir ders bulunamadı. Devam etmek için <strong>Lila'dan bugünün yoklama
+            Excel'ini</strong> içe aktar.
+          </p>
+
+          <Link
+            href="/import"
+            className="flex items-center justify-center gap-2 w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors shadow-lg shadow-blue-500/20"
+          >
+            <Upload className="w-5 h-5" />
+            Yoklama Listesini Yükle
+          </Link>
+
+          <div className="border-t border-gray-200 pt-4 space-y-2">
+            <p className="text-xs text-gray-500 font-medium">Yoklama yüklemeden devam edebilirsin:</p>
+            <Link
+              href="/ekran"
+              className="flex items-center gap-2 w-full border border-gray-200 hover:bg-gray-50 text-gray-700 font-medium py-2.5 rounded-lg transition-colors justify-center"
+            >
+              <Tv2 className="w-4 h-4" />
+              Bildirim Ekranına Geç
+            </Link>
+            <p className="text-xs text-gray-400 leading-snug text-center">
+              Bildirim ekranı ham BKDS verisini kullanır, yoklama gerekmez.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
