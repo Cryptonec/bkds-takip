@@ -47,7 +47,7 @@ export function calculateStaffStatus(input: StaffAttendanceInput): StaffAttendan
   return 'gelmedi';
 }
 
-export function getStaffStatusInfo(status: StaffAttendanceStatus) {
+export function getStaffStatusInfo(status: StaffAttendanceStatus | string) {
   const map: Record<StaffAttendanceStatus, { label: string; color: string; bg: string; border: string }> = {
     bekleniyor: { label: 'Bekleniyor', color: 'text-gray-600', bg: 'bg-gray-50', border: 'border-gray-200' },
     derste: { label: 'Derste', color: 'text-green-700', bg: 'bg-green-50', border: 'border-green-300' },
@@ -55,5 +55,5 @@ export function getStaffStatusInfo(status: StaffAttendanceStatus) {
     gec_basladi: { label: 'Geç Başladı', color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-300' },
     gecikiyor: { label: 'Gecikiyor', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200' },
   };
-  return map[status] ?? map.bekleniyor;
+  return map[status as StaffAttendanceStatus] ?? map.bekleniyor;
 }

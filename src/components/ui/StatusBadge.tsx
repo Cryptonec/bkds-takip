@@ -4,7 +4,7 @@ import { getAttendanceStatusInfo } from '@/lib/services/attendanceEngine';
 import { getStaffStatusInfo } from '@/lib/services/staffAttendanceEngine';
 
 interface StatusBadgeProps {
-  status: AttendanceStatus;
+  status: AttendanceStatus | string;
   size?: 'sm' | 'md';
 }
 
@@ -27,7 +27,7 @@ export function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
 }
 
 interface StaffStatusBadgeProps {
-  status: StaffAttendanceStatus;
+  status: StaffAttendanceStatus | string;
   size?: 'sm' | 'md';
 }
 

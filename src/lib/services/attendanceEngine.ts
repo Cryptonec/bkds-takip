@@ -55,7 +55,7 @@ export function calculateAttendanceStatus(input: AttendanceInput): AttendanceSta
   return gecGeldi ? 'gec_geldi' : 'derste';
 }
 
-export function getAttendanceStatusInfo(status: AttendanceStatus) {
+export function getAttendanceStatusInfo(status: AttendanceStatus | string) {
   const map: Record<AttendanceStatus, { label: string; color: string; bg: string; border: string }> = {
     bekleniyor:  { label: 'Bekleniyor',   color: 'text-gray-500',    bg: 'bg-gray-50',    border: 'border-gray-200' },
     gecikiyor:   { label: 'Gecikiyor',    color: 'text-yellow-700',  bg: 'bg-yellow-50',  border: 'border-yellow-300' },
@@ -69,5 +69,5 @@ export function getAttendanceStatusInfo(status: AttendanceStatus) {
     tamamlandi:  { label: 'Tamamlandı',   color: 'text-green-700',   bg: 'bg-green-100',  border: 'border-green-300' },
     bkds_muaf:   { label: 'BKDS Muaf',   color: 'text-blue-600',    bg: 'bg-blue-50',    border: 'border-blue-200' },
   };
-  return map[status] ?? map.bekleniyor;
+  return map[status as AttendanceStatus] ?? map.bekleniyor;
 }

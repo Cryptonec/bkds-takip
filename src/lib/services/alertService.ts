@@ -7,7 +7,7 @@ interface AlertDef {
   message: string;
 }
 
-function getStudentAlertDef(status: AttendanceStatus): AlertDef | null {
+function getStudentAlertDef(status: AttendanceStatus | string): AlertDef | null {
   switch (status) {
     case 'gecikiyor':
       return { type: 'ogrenci_gecikiyor', severity: 'uyari', message: 'Öğrenci BKDS girişi bekleniyor (gecikmeli)' };
@@ -24,7 +24,7 @@ function getStudentAlertDef(status: AttendanceStatus): AlertDef | null {
   }
 }
 
-function getStaffAlertDef(status: StaffAttendanceStatus): AlertDef | null {
+function getStaffAlertDef(status: StaffAttendanceStatus | string): AlertDef | null {
   switch (status) {
     case 'gecikiyor':
       return { type: 'personel_gecikiyor', severity: 'uyari', message: 'Öğretmen derse gecikmeli' };
