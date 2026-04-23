@@ -67,9 +67,9 @@ async function main() {
   });
 
   await prisma.user.upsert({
-    where: { email_organizationId: { email: 'superadmin@rehapp.com', organizationId: platformOrg.id } },
+    where: { email_organizationId: { email: 'superadmin@bkdstakip.com', organizationId: platformOrg.id } },
     create: {
-      email: 'superadmin@rehapp.com',
+      email: 'superadmin@bkdstakip.com',
       name: 'Super Admin',
       password: hashedPw,
       role: 'superadmin',
@@ -82,7 +82,7 @@ async function main() {
   console.log('Tamamlandi!');
   console.log('---');
   console.log('Demo kurum girisi:  admin@kurum.com / admin123');
-  console.log('Platform yonetici:  superadmin@rehapp.com / admin123');
+  console.log('Platform yonetici:  superadmin@bkdstakip.com / admin123');
 }
 
 main()

@@ -117,22 +117,6 @@ model Subscription {
   updatedAt      DateTime           @updatedAt
 }
 
-// SSO token'ları (Rehapp → bkds-takip geçici oturum)
-model SsoToken {
-  id             String   @id @default(cuid())
-  token          String   @unique
-  organizationId String
-  userId         String?
-  email          String
-  name           String
-  role           Role     @default(danisma)
-  usedAt         DateTime?
-  expiresAt      DateTime
-  createdAt      DateTime @default(now())
-
-  @@index([token])
-}
-
 // ─── Kullanıcı ───────────────────────────────────────────────────────────────
 
 model User {
