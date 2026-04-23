@@ -1,7 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import type { AttendanceStatus, StaffAttendanceStatus } from '@prisma/client';
-
-type AlertSeverity = 'normal' | 'uyari' | 'kritik';
+import type { AttendanceStatus, StaffAttendanceStatus, AlertSeverity } from '@/lib/constants/enums';
 
 interface AlertDef {
   type: string;

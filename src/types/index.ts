@@ -1,4 +1,4 @@
-import type { AttendanceStatus, StaffAttendanceStatus, AlertSeverity, Role } from '@prisma/client';
+import type { AttendanceStatus, StaffAttendanceStatus, AlertSeverity, Role } from '@/lib/constants/enums';
 
 export type { AttendanceStatus, StaffAttendanceStatus, AlertSeverity, Role };
 

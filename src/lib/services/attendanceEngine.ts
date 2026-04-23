@@ -1,4 +1,4 @@
-import { AttendanceStatus } from '@prisma/client';
+import type { AttendanceStatus } from '@/lib/constants/enums';
 import { minutesDiff } from '@/lib/utils/normalize';
 
 interface AttendanceInput {

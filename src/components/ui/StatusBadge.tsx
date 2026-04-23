@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import type { AttendanceStatus, StaffAttendanceStatus } from '@prisma/client';
+import type { AttendanceStatus, StaffAttendanceStatus } from '@/lib/constants/enums';
 import { getAttendanceStatusInfo } from '@/lib/services/attendanceEngine';
 import { getStaffStatusInfo } from '@/lib/services/staffAttendanceEngine';
 

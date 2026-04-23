@@ -7,54 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  superadmin // SaaS platform yöneticisi
-  admin
-  yonetici
-  danisma
-}
-
-enum AttendanceStatus {
-  bekleniyor
-  gecikiyor
-  giris_eksik
-  kritik
-  gec_geldi
-  giris_tamam
-  cikis_eksik
-  tamamlandi
-  bkds_muaf
-  erken_cikis
-  derste
-}
-
-enum StaffAttendanceStatus {
-  bekleniyor
-  derste
-  gelmedi
-  gec_basladi
-  gecikiyor
-}
-
-enum AlertSeverity {
-  normal
-  uyari
-  kritik
-}
-
-enum ImportStatus {
-  bekliyor
-  isleniyor
-  tamamlandi
-  hata
-}
-
-enum SubscriptionStatus {
-  aktif
-  pasif
-  deneme
-  iptal
-}
+// SQLite native enum desteklemediği için tüm enum tipleri String olarak saklanıyor.
+// TypeScript tarafındaki union type'lar src/lib/constants/enums.ts dosyasında:
+//   - Role:                  'superadmin' | 'admin' | 'yonetici' | 'danisma'
+//   - AttendanceStatus:      'bekleniyor' | 'gecikiyor' | 'giris_eksik' | 'kritik' |
+//                            'gec_geldi' | 'giris_tamam' | 'cikis_eksik' |
+//                            'tamamlandi' | 'bkds_muaf' | 'erken_cikis' | 'derste'
+//   - StaffAttendanceStatus: 'bekleniyor' | 'derste' | 'gelmedi' | 'gec_basladi' | 'gecikiyor'
+//   - AlertSeverity:         'normal' | 'uyari' | 'kritik'
+//   - ImportStatus:          'bekliyor' | 'isleniyor' | 'tamamlandi' | 'hata'
+//   - SubscriptionStatus:    'aktif' | 'pasif' | 'deneme' | 'iptal'
 
 // ─── SaaS Çok-Kiracı (Multi-tenant) Modelleri ────────────────────────────────
 
@@ -106,7 +68,7 @@ model Subscription {
   id             String             @id @default(cuid())
   organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   organizationId String             @unique
-  status         SubscriptionStatus @default(deneme)
+  status         String             @default("deneme")
   plan           String             @default("temel") // temel | profesyonel | kurumsal
   trialEndsAt    DateTime?
   currentPeriodStart DateTime?
@@ -124,7 +86,7 @@ model User {
   email          String
   name           String
   password       String?      // SSO ile girişte null olabilir
-  role           Role         @default(danisma)
+  role           String       @default("danisma")
   active         Boolean      @default(true)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   organizationId String
@@ -290,7 +252,7 @@ model Attendance {
   student         Student          @relation(fields: [studentId], references: [id])
   studentId       String
   tarih           DateTime
-  status          AttendanceStatus @default(bekleniyor)
+  status          String           @default("bekleniyor")
   girisZamani     DateTime?
   cikisZamani     DateTime?
   gercekGiris     DateTime?
@@ -311,7 +273,7 @@ model StaffAttendance {
   staff          Staff                 @relation(fields: [staffId], references: [id])
   staffId        String
   tarih          DateTime
-  status         StaffAttendanceStatus @default(bekleniyor)
+  status         String                @default("bekleniyor")
   updatedAt      DateTime              @updatedAt
 
   @@index([organizationId, tarih])
@@ -325,11 +287,11 @@ model ImportJob {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   organizationId String
   fileName       String
-  status         ImportStatus @default(bekliyor)
+  status         String       @default("bekliyor")
   totalRows      Int          @default(0)
   processedRows  Int          @default(0)
   errorRows      Int          @default(0)
-  errorDetails   Json?
+  errorDetails   String?  // JSON-encoded array of {row, reason}
   createdAt      DateTime     @default(now())
   completedAt    DateTime?
 
@@ -354,7 +316,7 @@ model ActionLog {
   action         String
   entity         String?
   entityId       String?
-  details        Json?
+  details        String?  // JSON-encoded metadata
   createdAt      DateTime     @default(now())
 
   @@index([organizationId, createdAt])
@@ -366,7 +328,7 @@ model Alert {
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   organizationId String
   type           String
-  severity       AlertSeverity
+  severity       String
   entityType     String
   entityId       String
   message        String

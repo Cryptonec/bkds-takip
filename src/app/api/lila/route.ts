@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
         status: errors.length > 0 ? (success > 0 ? 'tamamlandi' : 'hata') : 'tamamlandi',
         processedRows: success,
         errorRows: errors.length,
-        errorDetails: errors.length > 0 ? errors : undefined,
+        errorDetails: errors.length > 0 ? JSON.stringify(errors) : null,
         completedAt: new Date(),
       },
     });
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     await prisma.importJob.update({
       where: { id: job.id },
-      data: { status: 'hata', errorDetails: [{ reason: err.message }], completedAt: new Date() },
+      data: { status: 'hata', errorDetails: JSON.stringify([{ reason: err.message }]), completedAt: new Date() },
     });
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
@@ -65,7 +65,17 @@ export async function GET(req: NextRequest) {
     take: 20,
   });
 
-  return NextResponse.json(jobs);
+  // errorDetails DB'de JSON-string; client için parse et
+  const parsedJobs = jobs.map(j => ({
+    ...j,
+    errorDetails: j.errorDetails ? safeJsonParse(j.errorDetails) : null,
+  }));
+
+  return NextResponse.json(parsedJobs);
+}
+
+function safeJsonParse(s: string): unknown {
+  try { return JSON.parse(s); } catch { return null; }
 }
 
 function parseLilaHtmlXls(buffer: Buffer): LilaImportRow[] {
