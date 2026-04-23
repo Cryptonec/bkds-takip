@@ -1,6 +1,6 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { Search, Plus, UserCheck, UserX } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Search, Plus, UserCheck, UserX, Upload, FileSpreadsheet, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 interface Student {
   id: string;
@@ -10,6 +10,14 @@ interface Student {
   normalizedName: string;
 }
 
+interface ImportResult {
+  eklenen: number;
+  atlanan: number;
+  hatali: number;
+  toplam: number;
+  errors: Array<{ row: number; reason: string }>;
+}
+
 export default function OgrencilerPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [search, setSearch] = useState('');
@@ -17,6 +25,9 @@ export default function OgrencilerPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ adSoyad: '', ogrenciNo: '' });
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
     setLoading(true);
@@ -44,19 +55,111 @@ export default function OgrencilerPage() {
     load();
   }
 
+  async function handleImport(file: File) {
+    if (!file) return;
+    setUploading(true);
+    setImportResult(null);
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetch('/api/ogrenciler/import', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) {
+        setImportResult({ eklenen: 0, atlanan: 0, hatali: 1, toplam: 0, errors: [{ row: 0, reason: data.error ?? 'Yükleme başarısız' }] });
+      } else {
+        setImportResult(data);
+        load();
+      }
+    } catch (err: any) {
+      setImportResult({ eklenen: 0, atlanan: 0, hatali: 1, toplam: 0, errors: [{ row: 0, reason: err.message }] });
+    } finally {
+      setUploading(false);
+    }
+  }
+
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Öğrenciler</h1>
           <p className="text-gray-500 text-sm mt-1">{students.length} öğrenci</p>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-        >
-          <Plus className="w-4 h-4" /> Öğrenci Ekle
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleImport(f);
+              e.target.value = '';
+            }}
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            {uploading ? 'Yükleniyor...' : 'Excel Yükle'}
+          </button>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            <Plus className="w-4 h-4" /> Öğrenci Ekle
+          </button>
+        </div>
+      </div>
+
+      {/* Import sonucu */}
+      {importResult && (
+        <div className={`border rounded-xl p-4 mb-5 ${
+          importResult.hatali === 0
+            ? 'bg-green-50 border-green-200'
+            : importResult.eklenen > 0
+              ? 'bg-yellow-50 border-yellow-200'
+              : 'bg-red-50 border-red-200'
+        }`}>
+          <div className="flex items-center gap-2 mb-2">
+            {importResult.hatali === 0 ? (
+              <CheckCircle className="w-5 h-5 text-green-600" />
+            ) : (
+              <XCircle className="w-5 h-5 text-red-500" />
+            )}
+            <p className="font-semibold text-sm text-gray-900">
+              {importResult.eklenen} eklendi
+              {importResult.atlanan > 0 && `, ${importResult.atlanan} zaten vardı`}
+              {importResult.hatali > 0 && `, ${importResult.hatali} hatalı`}
+            </p>
+            <button onClick={() => setImportResult(null)} className="ml-auto text-gray-400 hover:text-gray-600">
+              <XCircle className="w-4 h-4" />
+            </button>
+          </div>
+          {importResult.errors.length > 0 && (
+            <div className="space-y-0.5 mt-2">
+              {importResult.errors.slice(0, 5).map((e, i) => (
+                <p key={i} className="text-xs text-red-700">Satır {e.row}: {e.reason}</p>
+              ))}
+              {importResult.errors.length > 5 && (
+                <p className="text-xs text-gray-500">... ve {importResult.errors.length - 5} hata daha</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Format bilgisi — Excel yükle butonuna basınca görünür */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-5 text-xs text-blue-800">
+        <p className="flex items-center gap-1.5 font-medium mb-1">
+          <FileSpreadsheet className="w-3.5 h-3.5" /> Excel format
+        </p>
+        <p>
+          Beklenen sütunlar: <code className="bg-blue-100 px-1 rounded">Ad Soyad</code> (zorunlu),{' '}
+          <code className="bg-blue-100 px-1 rounded">Öğrenci No</code> (opsiyonel),{' '}
+          <code className="bg-blue-100 px-1 rounded">TC</code> (opsiyonel). Mevcut öğrenci varsa atlanır, duplicate eklenmez.
+        </p>
       </div>
 
       {/* Add form */}
