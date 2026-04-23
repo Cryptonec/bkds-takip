@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -187,7 +187,7 @@ model LessonSession {
   studentId      String
   staff          Staff        @relation(fields: [staffId], references: [id])
   staffId        String
-  tarih          DateTime     @db.Date
+  tarih          DateTime
   baslangic      DateTime
   bitis          DateTime
   derslik        String
@@ -209,7 +209,7 @@ model StaffSession {
   organizationId String
   staff          Staff        @relation(fields: [staffId], references: [id])
   staffId        String
-  tarih          DateTime     @db.Date
+  tarih          DateTime
   baslangic      DateTime
   bitis          DateTime
   derslik        String
@@ -231,7 +231,7 @@ model BkdsRaw {
   id             String       @id @default(cuid())
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   organizationId String
-  tarih          DateTime     @db.Date
+  tarih          DateTime
   adSoyad        String
   maskedTc       String?
   individualType Int?         // 1 = öğrenci, 2 = personel (BKDS individual_type)
@@ -249,7 +249,7 @@ model BkdsAggregate {
   organizationId String
   student        Student?     @relation(fields: [studentId], references: [id])
   studentId      String?
-  tarih          DateTime     @db.Date
+  tarih          DateTime
   adSoyad        String
   ilkGiris       DateTime
   sonCikis       DateTime?
@@ -264,7 +264,7 @@ model BkdsPersonelLog {
   id             String       @id @default(cuid())
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   organizationId String
-  tarih          DateTime     @db.Date
+  tarih          DateTime
   maskedAd       String
   ilkGiris       DateTime
   sonCikis       DateTime?
@@ -289,7 +289,7 @@ model Attendance {
   lessonSessionId String           @unique
   student         Student          @relation(fields: [studentId], references: [id])
   studentId       String
-  tarih           DateTime         @db.Date
+  tarih           DateTime
   status          AttendanceStatus @default(bekleniyor)
   girisZamani     DateTime?
   cikisZamani     DateTime?
@@ -310,7 +310,7 @@ model StaffAttendance {
   staffSessionId String                @unique
   staff          Staff                 @relation(fields: [staffId], references: [id])
   staffId        String
-  tarih          DateTime              @db.Date
+  tarih          DateTime
   status         StaffAttendanceStatus @default(bekleniyor)
   updatedAt      DateTime              @updatedAt
 
@@ -370,7 +370,7 @@ model Alert {
   entityType     String
   entityId       String
   message        String
-  tarih          DateTime      @db.Date
+  tarih          DateTime
   resolved       Boolean       @default(false)
   resolvedAt     DateTime?
   createdAt      DateTime      @default(now())
