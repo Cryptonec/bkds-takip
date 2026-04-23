@@ -67,7 +67,7 @@ echo.
 echo [6/6] PM2 kuruluyor ve servis baslatiliyor...
 call npm install -g pm2
 call pm2 delete bkds-takip 2>nul
-call pm2 start npm --name bkds-takip -- start
+call pm2 start ecosystem.config.js
 call pm2 save
 
 REM Windows startup icin pm2-windows-startup

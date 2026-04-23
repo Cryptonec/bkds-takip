@@ -18,7 +18,7 @@ REM Servis zaten varsa restart, yoksa start
 pm2 describe bkds-takip >nul 2>nul
 if errorlevel 1 (
     echo Servis yok, baslatiliyor...
-    call pm2 start npm --name bkds-takip -- start
+    call pm2 start ecosystem.config.js
     call pm2 save
 ) else (
     echo Servis yeniden baslatiliyor...
