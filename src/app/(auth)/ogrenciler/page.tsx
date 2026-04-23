@@ -150,16 +150,17 @@ export default function OgrencilerPage() {
         </div>
       )}
 
-      {/* Format bilgisi — Excel yükle butonuna basınca görünür */}
+      {/* Format bilgisi */}
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-5 text-xs text-blue-800">
         <p className="flex items-center gap-1.5 font-medium mb-1">
-          <FileSpreadsheet className="w-3.5 h-3.5" /> Excel format
+          <FileSpreadsheet className="w-3.5 h-3.5" /> Hangi dosyayı yükleyebilirsin?
         </p>
-        <p>
-          Beklenen sütunlar: <code className="bg-blue-100 px-1 rounded">Ad Soyad</code> (zorunlu),{' '}
-          <code className="bg-blue-100 px-1 rounded">Öğrenci No</code> (opsiyonel),{' '}
-          <code className="bg-blue-100 px-1 rounded">TC</code> (opsiyonel). Mevcut öğrenci varsa atlanır, duplicate eklenmez.
-        </p>
+        <ul className="list-disc list-inside space-y-0.5">
+          <li><strong>Lila yoklama .xls</strong> — direkt indirdiğin dosyayı at, öğrenci isimleri otomatik çıkarılır</li>
+          <li><strong>Standart Excel/CSV</strong> — başlık satırı: <code className="bg-blue-100 px-1 rounded">Ad Soyad</code></li>
+          <li><strong>Tek sütun isim listesi</strong> — sadece adların alt alta olduğu .xlsx</li>
+        </ul>
+        <p className="mt-1 text-blue-600">Mevcut öğrenci varsa atlanır, duplicate eklenmez.</p>
       </div>
 
       {/* Add form */}
