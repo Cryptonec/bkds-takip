@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
 
   let kayitlar: OgrenciKaydi[] = [];
   let formatTipi = 'bilinmeyen';
+  let debug: any = undefined;
 
   // 1) Lila HTML XLS denetimi
   const head = buffer.slice(0, 200).toString('utf-8').trim().toLowerCase();
@@ -52,15 +53,36 @@ export async function POST(req: NextRequest) {
       const result = parseTabularExcel(sheet);
       kayitlar = result.kayitlar;
       formatTipi = result.formatTipi;
+      debug = result.debug;
     } catch (err: any) {
       return NextResponse.json({ error: `Excel/CSV okunamadı: ${err.message}` }, { status: 400 });
     }
   }
 
   if (kayitlar.length === 0) {
+    // Debug bilgisini errors içine koy ki UI'da görünsün
+    const debugErrors: Array<{ row: number; reason: string }> = [];
+    if (debug?.headerIdx !== undefined) {
+      debugErrors.push({ row: 0, reason: `Header satırı ${debug.headerIdx + 1}'de bulundu ama veri yok` });
+      if (Array.isArray(debug.headerRow)) {
+        debugErrors.push({ row: 0, reason: `Header: ${debug.headerRow.join(' | ')}` });
+      }
+    } else if (Array.isArray(debug?.ilkSatirlar)) {
+      debugErrors.push({ row: 0, reason: `Header satırı bulunamadı. İlk 3 satır:` });
+      debug.ilkSatirlar.forEach((row: any[], i: number) => {
+        debugErrors.push({ row: i + 1, reason: row.slice(0, 8).map(String).join(' | ') });
+      });
+    }
     return NextResponse.json({
-      error: 'Dosya tanınamadı veya hiç öğrenci ismi bulunamadı. Lila yoklama .xls\'i, BRY öğrenci listesi Excel\'i ya da "Ad Soyad" sütunlu Excel/CSV yükleyin.',
+      eklenen: 0,
+      atlanan: 0,
+      hatali: debugErrors.length || 1,
+      toplam: 0,
       formatTipi,
+      errors: debugErrors.length > 0 ? debugErrors : [{
+        row: 0,
+        reason: 'Dosya tanınamadı veya hiç öğrenci ismi bulunamadı. Lila yoklama .xls\'i, BRY öğrenci listesi Excel\'i ya da "Ad Soyad" sütunlu Excel/CSV yükleyin.',
+      }],
     }, { status: 400 });
   }
 
@@ -147,19 +169,34 @@ function extractFromLilaHtmlXls(buffer: Buffer): OgrenciKaydi[] {
  *  - TEK 'AD SOYAD' kolonu varsa direkt kullanır
  *  - TC + Öğrenci No kolonları varsa çıkarır
  */
-function parseTabularExcel(sheet: XLSX.WorkSheet): { kayitlar: OgrenciKaydi[]; formatTipi: string } {
+function parseTabularExcel(sheet: XLSX.WorkSheet): {
+  kayitlar: OgrenciKaydi[];
+  formatTipi: string;
+  debug?: { headerIdx?: number; headerRow?: any[]; ilkSatirlar?: any[][] };
+} {
   const rawRows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '' });
   if (rawRows.length === 0) return { kayitlar: [], formatTipi: 'bos' };
 
-  const norm = (s: any) => String(s ?? '').toLowerCase().trim()
-    .replace(/[._]/g, ' ').replace(/\s+/g, ' ');
+  // Türkçe-aware ASCII normalize: İ→i, ı→i, Ş→s, Ü→u, vb.
+  const norm = (s: any) => String(s ?? '')
+    .replace(/İ/g, 'i').replace(/I/g, 'i').replace(/ı/g, 'i')
+    .replace(/Ş/g, 's').replace(/ş/g, 's')
+    .replace(/Ğ/g, 'g').replace(/ğ/g, 'g')
+    .replace(/Ü/g, 'u').replace(/ü/g, 'u')
+    .replace(/Ö/g, 'o').replace(/ö/g, 'o')
+    .replace(/Ç/g, 'c').replace(/ç/g, 'c')
+    .toLowerCase()
+    .trim()
+    .replace(/[._]/g, ' ')
+    .replace(/\s+/g, ' ');
 
-  // Header satırı ara — ilk 10 satırda 'ADI' veya 'AD' geçen
-  const adKeywords = ['adi', 'ad', 'ad soyad', 'adi soyadi', 'isim', 'name', 'öğrenci adı', 'ogrenci adi', 'öğrenci', 'ogrenci'];
+  // Header satırı ara — ilk 15 satırda ADI/AD/SOYAD/TC/NO içeren ilk satır
+  const headerHints = ['adi', 'ad', 'ad soyad', 'adi soyadi', 'isim', 'name', 'soyadi', 'soyad', 'ogrenci no', 'kimlik no', 'tc kimlik'];
   let headerIdx = -1;
   for (let i = 0; i < Math.min(rawRows.length, 15); i++) {
     const cells = (rawRows[i] ?? []).map(norm);
-    if (cells.some(c => adKeywords.includes(c))) {
+    // Hücreden biri tam header anahtar kelimesi ise başlık satırıdır
+    if (cells.some(c => c && headerHints.includes(c))) {
       headerIdx = i;
       break;
     }
@@ -170,11 +207,15 @@ function parseTabularExcel(sheet: XLSX.WorkSheet): { kayitlar: OgrenciKaydi[]; f
     const out: OgrenciKaydi[] = [];
     for (const row of rawRows) {
       const v = String(row?.[0] ?? '').trim();
-      if (v && v.length >= 2 && !adKeywords.includes(norm(v))) {
+      if (v && v.length >= 2 && !headerHints.includes(norm(v))) {
         out.push({ adSoyad: v, ogrenciNo: null, tc: null });
       }
     }
-    return { kayitlar: out, formatTipi: 'tek-sutun-headersiz' };
+    return {
+      kayitlar: out,
+      formatTipi: 'tek-sutun-headersiz',
+      debug: { ilkSatirlar: rawRows.slice(0, 3) },
+    };
   }
 
   // Header'dan kolon indexlerini topla
@@ -185,18 +226,26 @@ function parseTabularExcel(sheet: XLSX.WorkSheet): { kayitlar: OgrenciKaydi[]; f
     if (k && !colMap.has(k)) colMap.set(k, idx);
   });
 
+  // Hem tam eşleşme hem substring fallback
   const findCol = (...keys: string[]): number => {
     for (const k of keys) {
-      const idx = colMap.get(norm(k));
-      if (idx !== undefined) return idx;
+      const nk = norm(k);
+      const exact = colMap.get(nk);
+      if (exact !== undefined) return exact;
+    }
+    // Substring fallback — herhangi bir başlık anahtar kelimeyi içeriyorsa
+    for (const [headerKey, idx] of colMap) {
+      for (const k of keys) {
+        if (headerKey.includes(norm(k))) return idx;
+      }
     }
     return -1;
   };
 
-  const adIdx = findCol('adi', 'ad', 'ad soyad', 'adi soyadi', 'isim', 'name', 'öğrenci adı', 'ogrenci adi', 'öğrenci', 'ogrenci');
-  const soyadIdx = findCol('soyadi', 'soyad', 'surname', 'last name');
-  const noIdx = findCol('öğrenci no', 'ogrenci no', 'no', 'numara', 'student no');
-  const tcIdx = findCol('t c kimlik no', 't c kimlik', 'tc kimlik no', 'tc kimlik', 'tc', 'tckn', 'kimlik no');
+  const adIdx = findCol('adi', 'ad', 'ad soyad', 'adi soyadi', 'isim', 'name', 'ogrenci adi');
+  const soyadIdx = findCol('soyadi', 'soyad', 'surname');
+  const noIdx = findCol('ogrenci no', 'no', 'numara', 'student no');
+  const tcIdx = findCol('t c kimlik no', 'tc kimlik no', 'tc kimlik', 'tc', 'tckn', 'kimlik no');
 
   const kayitlar: OgrenciKaydi[] = [];
   for (let i = headerIdx + 1; i < rawRows.length; i++) {
@@ -226,5 +275,9 @@ function parseTabularExcel(sheet: XLSX.WorkSheet): { kayitlar: OgrenciKaydi[]; f
   const formatTipi = (adIdx >= 0 && soyadIdx >= 0)
     ? 'excel-ad-soyad-ayri'
     : 'excel-tek-kolon';
-  return { kayitlar, formatTipi };
+  return {
+    kayitlar,
+    formatTipi,
+    debug: { headerIdx, headerRow, ilkSatirlar: rawRows.slice(0, 5) },
+  };
 }
