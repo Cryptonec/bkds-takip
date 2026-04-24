@@ -309,15 +309,15 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
       if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
       if ('speechSynthesis' in window) window.speechSynthesis.getVoices();
     }
+    // Sadece ilk mount'ta bir kere fetch. Otomatik polling YOK.
+    // Güncel veri için kullanıcı refresh butonuna basar ya da sekme
+    // değiştirip geri geldiğinde/focus aldığında fetch tetiklenir.
     fetchData();
-    // intervalMs <= 0 ise otomatik yenileme kapalı, sadece ilk fetch + event'ler
-    const interval = intervalMs > 0 ? setInterval(fetchData, intervalMs) : null;
     const onVis = () => { if (document.visibilityState === 'visible') fetchData(); };
     const onFocus = () => fetchData();
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('focus', onFocus);
     return () => {
-      if (interval) clearInterval(interval);
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('focus', onFocus);
     };

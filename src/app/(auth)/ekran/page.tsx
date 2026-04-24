@@ -12,7 +12,6 @@ interface Kayit {
 }
 
 const MAX_NORMAL = 5;
-const POLL_MS = 1000;
 const YENI_ANIMASYON_MS = 2400;
 
 function toTurkishTitle(text: string): string {
@@ -243,14 +242,15 @@ function useBildirimEkrani(sesAcik: boolean) {
   }, []);
 
   useEffect(() => {
+    // Sadece ilk mount ve tab focus/visible event'lerinde fetch. Otomatik
+    // polling YOK — sayfanın görünürde refresh olması kullanıcıyı rahatsız
+    // ediyordu.
     poll();
-    const t = setInterval(poll, POLL_MS);
     const onVis = () => { if (document.visibilityState==='visible') poll(); };
     const onFocus = () => poll();
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('focus', onFocus);
     return () => {
-      clearInterval(t);
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('focus', onFocus);
     };

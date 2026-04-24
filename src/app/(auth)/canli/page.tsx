@@ -72,14 +72,13 @@ export default function CanliPage() {
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
   const [errorToast, setErrorToast] = useState<string | null>(null);
-  const [otoYenile, setOtoYenile] = useState(true);
 
   const {
     data, loading, error, lastUpdated, refresh,
     yeniBildirimler, dismissBildirim,
     yeniGirisler, yeniCikislar,
     yeniPersonelGiris, yeniPersonelCikis,
-  } = useLiveAttendance(undefined, otoYenile ? 2000 : 0);
+  } = useLiveAttendance();
 
   useEffect(() => {
     const v = localStorage.getItem(COLORBLIND_KEY);
@@ -288,20 +287,12 @@ export default function CanliPage() {
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
 
-          <button
-            onClick={() => setOtoYenile(v => !v)}
-            className={cn('flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full font-medium border transition-colors',
-              error
-                ? 'text-red-600 bg-red-50 border-red-200'
-                : otoYenile
-                  ? 'text-green-600 bg-green-50 border-green-200 hover:bg-green-100'
-                  : 'text-gray-500 bg-gray-100 border-gray-200 hover:bg-gray-200',
-            )}
-            title={otoYenile ? 'Otomatik yenilemeyi kapat' : 'Otomatik yenilemeyi aç'}
-          >
+          <div className={cn('flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full font-medium',
+            error ? 'text-red-600 bg-red-50' : 'text-gray-600 bg-gray-100',
+          )}>
             {error ? <WifiOff className="w-3.5 h-3.5" /> : <Wifi className="w-3.5 h-3.5" />}
-            {error ? 'Bağlantı Hatası' : otoYenile ? 'Otomatik · 2s' : 'Manuel'}
-          </button>
+            {error ? 'Bağlantı Hatası' : 'Manuel'}
+          </div>
 
           {/* Bildirimler butonu — Canlı · 5s yanında, okunmamış sayısı inline */}
           <button
