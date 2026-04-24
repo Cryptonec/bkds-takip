@@ -340,17 +340,10 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
       prevBildirimIds.current = new Set(json.bildirimler.map(b => b.id));
       isFirstFetch.current = false;
 
-      // Sadece içerik GERÇEKTEN değiştiyse state'i güncelle — React
-      // re-render tetiklenmez, DOM aynı kalır, "F5 atılmış gibi" görünüm
-      // olmaz. Timestamp alanları (updatedAt, bkdsError) hariç karşılaştırma.
-      setData(prev => {
-        if (!prev || !dataEsdeger(prev, json)) {
-          // Aynı render döngüsünde lastUpdated da güncelle (veri yeni gerçekten)
-          queueMicrotask(() => setLastUpdated(new Date()));
-          return json;
-        }
-        return prev; // değişmedi, render tetiklenmez
-      });
+      // data: sadece içerik değiştiyse güncelle (DOM flicker önle)
+      setData(prev => !prev || !dataEsdeger(prev, json) ? json : prev);
+      // lastUpdated: her poll'da güncelle ki 'Son güncelleme' saniyede 1 tick etsin
+      setLastUpdated(new Date());
       setError(prev => (prev === null ? prev : null));
     } catch (err: any) {
       setError(err.message);
