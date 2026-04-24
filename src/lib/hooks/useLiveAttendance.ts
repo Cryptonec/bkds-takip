@@ -93,19 +93,29 @@ function toTurkishTitle(text: string): string {
 }
 
 function speak(text: string) {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  if (typeof window === 'undefined') return;
   if (text.includes('*')) return; // Maskeli isim — söyleme
   const normalized = toTurkishTitle(text);
-  window.speechSynthesis.cancel();
-  const utt = new SpeechSynthesisUtterance(normalized);
-  utt.lang = 'tr-TR';
-  utt.rate = 0.9;
-  utt.pitch = 1.0;
-  utt.volume = 1.0;
-  const voices = window.speechSynthesis.getVoices();
-  const trVoice = voices.find(v => v.lang.startsWith('tr'));
-  if (trVoice) utt.voice = trVoice;
-  window.speechSynthesis.speak(utt);
+
+  // Her zaman sunucu-tarafı Edge Neural TTS endpoint'ini kullan.
+  // Windows TTS ayarından bağımsız, yüksek kalite, pratik limitsiz.
+  try {
+    const audio = new Audio(`/api/tts?text=${encodeURIComponent(normalized)}`);
+    audio.volume = 1.0;
+    audio.play().catch(() => {
+      // Autoplay engellenirse fallback Web Speech (sistem Türkçe sesi varsa)
+      if ('speechSynthesis' in window) {
+        const voices = window.speechSynthesis.getVoices();
+        const trVoice = voices.find(v => v.lang.toLowerCase().startsWith('tr'));
+        if (trVoice) {
+          const utt = new SpeechSynthesisUtterance(normalized);
+          utt.lang = 'tr-TR';
+          utt.voice = trVoice;
+          window.speechSynthesis.speak(utt);
+        }
+      }
+    });
+  } catch {}
 }
 
 function playBeep(tip: 'giris' | 'cikis' | 'uyari' | 'kritik' | 'personel_giris' | 'personel_cikis') {
