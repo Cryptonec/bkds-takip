@@ -78,7 +78,7 @@ export default function CanliPage() {
     yeniBildirimler, dismissBildirim,
     yeniGirisler, yeniCikislar,
     yeniPersonelGiris, yeniPersonelCikis,
-  } = useLiveAttendance();
+  } = useLiveAttendance(undefined, 2000);
 
   useEffect(() => {
     const v = localStorage.getItem(COLORBLIND_KEY);
@@ -288,10 +288,10 @@ export default function CanliPage() {
           </button>
 
           <div className={cn('flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full font-medium',
-            error ? 'text-red-600 bg-red-50' : 'text-gray-600 bg-gray-100',
+            error ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50',
           )}>
             {error ? <WifiOff className="w-3.5 h-3.5" /> : <Wifi className="w-3.5 h-3.5" />}
-            {error ? 'Bağlantı Hatası' : 'Manuel'}
+            {error ? 'Bağlantı Hatası' : 'Canlı'}
           </div>
 
           {/* Bildirimler butonu — Canlı · 5s yanında, okunmamış sayısı inline */}

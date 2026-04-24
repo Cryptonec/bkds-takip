@@ -130,6 +130,25 @@ function playBeep(tip: 'giris' | 'cikis' | 'uyari' | 'kritik' | 'personel_giris'
   } catch {}
 }
 
+/**
+ * İki yanıt içeriği-olarak aynı mı? updatedAt/bkdsError gibi timestamp-ish
+ * alanlar hariç ogrenciRows, personelRows, bildirimler, tumPersonelGirisler,
+ * tumOgrenciGirisler, statusCounts karşılaştırılır. Aynıysa React setData
+ * atlanır, re-render yapılmaz.
+ */
+function dataEsdeger(a: LiveData, b: LiveData): boolean {
+  const pick = (d: LiveData) => ({
+    ogrenciRows: d.ogrenciRows,
+    personelRows: d.personelRows,
+    bildirimler: d.bildirimler,
+    tumPersonelGirisler: d.tumPersonelGirisler,
+    tumOgrenciGirisler: (d as any).tumOgrenciGirisler,
+    statusCounts: d.statusCounts,
+    staffStatusCounts: d.staffStatusCounts,
+  });
+  return JSON.stringify(pick(a)) === JSON.stringify(pick(b));
+}
+
 export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
   const [data, setData] = useState<LiveData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -294,7 +313,14 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
       prevBildirimIds.current = new Set(json.bildirimler.map(b => b.id));
       isFirstFetch.current = false;
 
-      setData(json);
+      // Sadece içerik GERÇEKTEN değiştiyse state'i güncelle — React
+      // re-render tetiklenmez, DOM aynı kalır, "F5 atılmış gibi" görünüm
+      // olmaz. Timestamp alanları (updatedAt, bkdsError) hariç karşılaştırma.
+      setData(prev => {
+        if (!prev) return json;
+        if (dataEsdeger(prev, json)) return prev;
+        return json;
+      });
       setLastUpdated(new Date());
       setError(null);
     } catch (err: any) {
@@ -309,15 +335,14 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
       if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
       if ('speechSynthesis' in window) window.speechSynthesis.getVoices();
     }
-    // Sadece ilk mount'ta bir kere fetch. Otomatik polling YOK.
-    // Güncel veri için kullanıcı refresh butonuna basar ya da sekme
-    // değiştirip geri geldiğinde/focus aldığında fetch tetiklenir.
     fetchData();
+    const interval = setInterval(fetchData, intervalMs);
     const onVis = () => { if (document.visibilityState === 'visible') fetchData(); };
     const onFocus = () => fetchData();
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('focus', onFocus);
     return () => {
+      clearInterval(interval);
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('focus', onFocus);
     };
