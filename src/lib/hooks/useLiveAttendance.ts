@@ -169,9 +169,13 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
 
       // Tüm personel girişlerini tek bir haritada topla
       // key = staffId (varsa) veya ogretmenAdi
+      // Sadece bildirime değer olanlar: dersi olan VE/VEYA maskesiz (yani
+      // tanımlı) personel. Maskeli + derssiz kişiler BKDS'de biyometrik
+      // eşleşmesi olmayan diğer kurum çalışanları veya tanıdık değişen kişiler;
+      // onlar için 'ders başladı' bildirimi yanlış olur.
       const tumGirisMap = new Map<string, { ad: string; derslik?: string; cikisVar: boolean; girisTs: number; cikisTs: number }>();
 
-      // personelRows'tan
+      // personelRows'tan — dersi olan personel (her zaman dahil)
       for (const r of json.personelRows) {
         if (r.baslamaZamani) {
           tumGirisMap.set(r.staffId, {
@@ -183,17 +187,18 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
           });
         }
       }
-      // tumPersonelGirisler'den (derssiz olanlar)
+      // tumPersonelGirisler'den — sadece MASKELENMEMİŞ (Lila ile eşleşen)
+      // personel dahil edilir. Maskeli isimler için bildirim tetiklenmez.
       for (const p of (json.tumPersonelGirisler ?? [])) {
         const key = p.staffId ?? p.ogretmenAdi;
-        if (!tumGirisMap.has(key)) {
-          tumGirisMap.set(key, {
-            ad: p.ogretmenAdi,
-            cikisVar: !!p.sonCikis,
-            girisTs: p.ilkGiris ? new Date(p.ilkGiris).getTime() : 0,
-            cikisTs: p.sonCikis ? new Date(p.sonCikis).getTime() : 0,
-          });
-        }
+        if (tumGirisMap.has(key)) continue;
+        if (!p.ogretmenAdi || p.ogretmenAdi.includes('*')) continue; // maskeli — atla
+        tumGirisMap.set(key, {
+          ad: p.ogretmenAdi,
+          cikisVar: !!p.sonCikis,
+          girisTs: p.ilkGiris ? new Date(p.ilkGiris).getTime() : 0,
+          cikisTs: p.sonCikis ? new Date(p.sonCikis).getTime() : 0,
+        });
       }
 
       // Ses sadece SON 2 DK içinde gerçekleşen kayıtlar için — stale veriye
