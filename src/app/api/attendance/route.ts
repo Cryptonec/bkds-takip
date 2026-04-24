@@ -17,7 +17,41 @@ export const fetchCache = 'force-no-store';
 // Per-org son çekim zamanı
 const lastBkdsFetchMap = new Map<string, number>();
 const lastBkdsErrorMap = new Map<string, { at: number; message: string }>();
+const inFlightMap = new Map<string, number>();
 const BKDS_FETCH_INTERVAL = 1500;
+const STUCK_FETCH_MS = 20_000;
+
+/**
+ * BKDS'yi arka planda çek — client beklemez.
+ * Artık bkdsProviderService.saveAndAggregate atomik transaction kullandığı için
+ * polling asla boş DB görmez. Hem hızlı yanıt hem flicker yok.
+ */
+function refreshBkdsInBackground(orgId: string, tarih: Date) {
+  const existing = inFlightMap.get(orgId);
+  if (existing !== undefined && Date.now() - existing < STUCK_FETCH_MS) return;
+  const startedAt = Date.now();
+  inFlightMap.set(orgId, startedAt);
+  lastBkdsFetchMap.set(orgId, startedAt);
+
+  (async () => {
+    try {
+      const service = getBkdsService(orgId);
+      const records = await service.fetchToday();
+      await service.saveAndAggregate(records, tarih);
+      await recalculateAttendance(tarih, orgId, new Date());
+      await recalculateStaffAttendance(tarih, orgId, new Date());
+      await generateAlerts(tarih, orgId);
+      lastBkdsErrorMap.delete(orgId);
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      console.error('[Attendance BG] BKDS hatası:', msg);
+      lastBkdsErrorMap.set(orgId, { at: Date.now(), message: msg });
+      lastBkdsFetchMap.set(orgId, Date.now() - BKDS_FETCH_INTERVAL + 3000);
+    } finally {
+      if (inFlightMap.get(orgId) === startedAt) inFlightMap.delete(orgId);
+    }
+  })();
+}
 
 function capitalizeDerslik(str: string): string {
   return str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -36,26 +70,11 @@ export async function GET(req: NextRequest) {
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
+  // BKDS'yi arka planda tetikle — client beklemez (atomik transaction sayesinde
+  // DB yarım state asla görünmez, flicker da olmaz)
   const lastFetch = lastBkdsFetchMap.get(orgId) ?? 0;
-  const shouldFetch = (now.getTime() - lastFetch) >= BKDS_FETCH_INTERVAL;
-  if (shouldFetch) {
-    try {
-      const service = getBkdsService(orgId);
-      const records = await service.fetchToday();
-      await service.saveAndAggregate(records, tarih);
-      await recalculateAttendance(tarih, orgId, now);
-      await recalculateStaffAttendance(tarih, orgId, now);
-      await generateAlerts(tarih, orgId);
-      // Başarılı olduysa throttle güncelle; başarısızsa hemen tekrar denesin
-      lastBkdsFetchMap.set(orgId, now.getTime());
-      lastBkdsErrorMap.delete(orgId);
-    } catch (err: any) {
-      const msg = err?.message ?? String(err);
-      console.error('[Attendance API] BKDS hatası:', msg);
-      lastBkdsErrorMap.set(orgId, { at: now.getTime(), message: msg });
-      // Hata durumunda da 3s throttle koy (hızlı fail loop olmasın)
-      lastBkdsFetchMap.set(orgId, now.getTime() - BKDS_FETCH_INTERVAL + 3000);
-    }
+  if ((now.getTime() - lastFetch) >= BKDS_FETCH_INTERVAL) {
+    refreshBkdsInBackground(orgId, tarih);
   }
 
   const lastErr = lastBkdsErrorMap.get(orgId);
