@@ -83,6 +83,15 @@ function fmt(iso: string | Date) {
   return new Date(iso).toLocaleTimeString('tr-TR', { hour:'2-digit', minute:'2-digit' });
 }
 
+/** İki kayıt listesi içerik-olarak eşit mi? (id + saat + ad + ts) */
+function listEsdeger(a: Kayit[], b: Kayit[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].id !== b[i].id || a[i].saat !== b[i].saat || a[i].ad !== b[i].ad || a[i].ts !== b[i].ts) return false;
+  }
+  return true;
+}
+
 function useBildirimEkrani(sesAcik: boolean) {
   const girisMapRef = useRef<Map<string,Kayit>>(new Map());
   const cikisMapRef = useRef<Map<string,Kayit>>(new Map());
@@ -204,8 +213,10 @@ function useBildirimEkrani(sesAcik: boolean) {
       // State'i güncelle — her iki liste de her zaman en güncel tam hali gösterir
       const sortedGiris = [...girisMapRef.current.values()].sort((a,b) => b.ts - a.ts);
       const sortedCikis = [...cikisMapRef.current.values()].sort((a,b) => b.ts - a.ts);
-      setGirisler(sortedGiris);
-      setCikislar(sortedCikis);
+      // Sadece içerik değiştiyse setState — React re-render tetiklenmez, DOM
+      // aynı kalır, fullscreen korunur, F5 hissi olmaz
+      setGirisler(prev => listEsdeger(prev, sortedGiris) ? prev : sortedGiris);
+      setCikislar(prev => listEsdeger(prev, sortedCikis) ? prev : sortedCikis);
 
       // Ses + animasyon — yeni eklenenler için beep + TTS (tek en yeni kaydı seslendir)
       if (!isFirst.current) {
@@ -279,19 +290,6 @@ export default function EkranPage() {
   }, []);
 
   const { girisler, cikislar, yeniIds, sonGuncelleme } = useBildirimEkrani(sesAcik);
-  const [saat, setSaat] = useState('');
-  const [tarih, setTarih] = useState('');
-
-  useEffect(() => {
-    const tick = () => {
-      const now = new Date();
-      setSaat(now.toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}));
-      setTarih(now.toLocaleDateString('tr-TR', {weekday:'long',day:'numeric',month:'long',year:'numeric'}));
-    };
-    tick();
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, []);
 
   // Normal modda ilk 5 kayıt; tam ekranda bütün kayıtlar
   const listeGiris = isFullscreen ? girisler : girisler.slice(0, MAX_NORMAL);
@@ -311,8 +309,7 @@ export default function EkranPage() {
             {menuGizli ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
           </button>
           <div className="min-w-0">
-            <p className="text-4xl font-bold tabular-nums tracking-tight leading-none">{saat}</p>
-            <p className="text-gray-500 text-xs mt-0.5 capitalize truncate">{tarih}</p>
+            <SaatGostergesi />
           </div>
         </div>
 
@@ -515,5 +512,28 @@ function BildirimsalKart({ kayit, index, isFullscreen, yeni }: {
       </p>
       <p className={`font-bold tabular-nums shrink-0 ${boyut.saat} ${s.saat}`}>{kayit.saat}</p>
     </div>
+  );
+}
+
+/** Saat + tarih gösterimi ayrı component — her saniye tick olur ama parent
+ * EkranPage'i re-render etmez, böylece Sutun/Kart'lar etkilenmez. */
+function SaatGostergesi() {
+  const [saat, setSaat] = useState('');
+  const [tarih, setTarih] = useState('');
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      setSaat(now.toLocaleTimeString('tr-TR', { hour:'2-digit', minute:'2-digit', second:'2-digit' }));
+      setTarih(now.toLocaleDateString('tr-TR', { weekday:'long', day:'numeric', month:'long', year:'numeric' }));
+    };
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <>
+      <p className="text-4xl font-bold tabular-nums tracking-tight leading-none">{saat}</p>
+      <p className="text-gray-500 text-xs mt-0.5 capitalize truncate">{tarih}</p>
+    </>
   );
 }

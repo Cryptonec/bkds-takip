@@ -317,12 +317,14 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
       // re-render tetiklenmez, DOM aynı kalır, "F5 atılmış gibi" görünüm
       // olmaz. Timestamp alanları (updatedAt, bkdsError) hariç karşılaştırma.
       setData(prev => {
-        if (!prev) return json;
-        if (dataEsdeger(prev, json)) return prev;
-        return json;
+        if (!prev || !dataEsdeger(prev, json)) {
+          // Aynı render döngüsünde lastUpdated da güncelle (veri yeni gerçekten)
+          queueMicrotask(() => setLastUpdated(new Date()));
+          return json;
+        }
+        return prev; // değişmedi, render tetiklenmez
       });
-      setLastUpdated(new Date());
-      setError(null);
+      setError(prev => (prev === null ? prev : null));
     } catch (err: any) {
       setError(err.message);
     } finally {
