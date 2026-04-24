@@ -1,52 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 /**
- * Türkçe TTS endpoint — Microsoft Edge Neural TTS (Azure) kullanır.
- * Windows konuşma paketine bağımlı değildir; sistemde ses yüklü olmasa bile
- * çalışır. Gerektirdiği: internet.
+ * Türkçe TTS endpoint — Google Translate TTS'i sunucu tarafından proxy eder.
+ * - Client basitçe `<audio src="/api/tts?text=...">` kullanır
+ * - CORS sorunu yok (kendi domain'imiz)
+ * - Tarayıcı ses ayarına / Windows konuşma paketine bağımlı değil
+ * - Tek gereken: sunucunun internet erişimi
  */
 export async function GET(req: NextRequest) {
   const text = req.nextUrl.searchParams.get('text')?.trim();
-  if (!text || text.length === 0) {
+  if (!text) {
     return NextResponse.json({ error: 'text parametresi gerekli' }, { status: 400 });
-  }
-  if (text.length > 500) {
-    return NextResponse.json({ error: 'text çok uzun (max 500 karakter)' }, { status: 400 });
   }
   if (text.includes('*')) {
     return NextResponse.json({ error: 'maskeli isim seslendirilmez' }, { status: 400 });
   }
 
-  try {
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata('tr-TR-EmelNeural', OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const { audioStream } = tts.toStream(text);
+  // Google Translate TTS char limit ~200; uzun metni kısalt
+  const cropped = text.slice(0, 200);
+  const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cropped)}&tl=tr&client=tw-ob`;
 
-    // Tüm stream'i buffer'a topla — sonra tek response olarak gönder.
-    // Stream chunked response'a göre tarayıcılar çok daha güvenilir oynatır.
-    const chunks: Buffer[] = [];
-    await new Promise<void>((resolve, reject) => {
-      audioStream.on('data', (chunk: Buffer) => chunks.push(chunk));
-      audioStream.on('end', () => resolve());
-      audioStream.on('close', () => resolve());
-      audioStream.on('error', (err: Error) => reject(err));
-      // Güvenlik: 15sn timeout
-      setTimeout(() => reject(new Error('TTS timeout (15sn)')), 15_000);
+  try {
+    const res = await fetch(url, {
+      headers: {
+        // Bazı User-Agent'ler bloklanabiliyor; tarayıcı taklidi
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://translate.google.com/',
+      },
     });
 
-    const audio = Buffer.concat(chunks);
-    if (audio.length === 0) {
-      return NextResponse.json({ error: 'TTS boş ses döndü' }, { status: 500 });
+    if (!res.ok) {
+      return NextResponse.json({
+        error: `Google TTS hatası: ${res.status} ${res.statusText}`,
+      }, { status: 502 });
     }
 
-    return new NextResponse(audio, {
+    const buffer = Buffer.from(await res.arrayBuffer());
+
+    return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'audio/mpeg',
-        'Content-Length': String(audio.length),
+        'Content-Length': String(buffer.length),
         'Cache-Control': 'public, max-age=3600',
       },
     });
@@ -56,4 +53,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
-
