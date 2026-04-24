@@ -93,19 +93,39 @@ function toTurkishTitle(text: string): string {
 }
 
 function speak(text: string) {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  if (typeof window === 'undefined') return;
   if (text.includes('*')) return; // Maskeli isim — söyleme
   const normalized = toTurkishTitle(text);
-  window.speechSynthesis.cancel();
-  const utt = new SpeechSynthesisUtterance(normalized);
-  utt.lang = 'tr-TR';
-  utt.rate = 0.9;
-  utt.pitch = 1.0;
-  utt.volume = 1.0;
-  const voices = window.speechSynthesis.getVoices();
-  const trVoice = voices.find(v => v.lang.startsWith('tr'));
-  if (trVoice) utt.voice = trVoice;
-  window.speechSynthesis.speak(utt);
+
+  // 1. Önce sistemde Türkçe ses var mı bak — varsa Web Speech (offline)
+  if ('speechSynthesis' in window) {
+    const voices = window.speechSynthesis.getVoices();
+    const trVoice = voices.find(v => v.lang.toLowerCase().startsWith('tr'));
+    if (trVoice) {
+      window.speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance(normalized);
+      utt.lang = 'tr-TR';
+      utt.rate = 0.9;
+      utt.pitch = 1.0;
+      utt.volume = 1.0;
+      utt.voice = trVoice;
+      window.speechSynthesis.speak(utt);
+      return;
+    }
+  }
+
+  // 2. Türkçe ses yoksa Google Translate TTS (online fallback) — internet gerek
+  try {
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(normalized.slice(0, 200))}&tl=tr&client=tw-ob`;
+    const audio = new Audio(url);
+    audio.volume = 1.0;
+    audio.play().catch(err => {
+      // Bazı tarayıcılar otomatik play'i blokluyor (kullanıcı etkileşimi gerek)
+      console.warn('[TTS] online fallback play başarısız:', err?.message ?? err);
+    });
+  } catch (err) {
+    console.warn('[TTS] online fallback hatası:', err);
+  }
 }
 
 function playBeep(tip: 'giris' | 'cikis' | 'uyari' | 'kritik' | 'personel_giris' | 'personel_cikis') {
