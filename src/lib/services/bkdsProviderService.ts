@@ -40,20 +40,29 @@ function normalizeRecord(r: any): BkdsApiRecord | null {
   }
   const individualType = Number.isFinite(typeRaw) ? Number(typeRaw) : null;
 
-  if (!fullName || !firstEntry) return null; // zorunlu alanlar yoksa at
+  if (!fullName) return null;
 
-  const entryDate = new Date(firstEntry);
-  if (isNaN(entryDate.getTime())) return null;
+  // En az bir geçerli timestamp olmalı (firstEntry VEYA lastExit)
+  const entryDate = firstEntry ? new Date(firstEntry) : null;
+  const validEntry = entryDate && !isNaN(entryDate.getTime()) ? entryDate : null;
 
   const exitDate = lastExit ? new Date(lastExit) : null;
   const validExit = exitDate && !isNaN(exitDate.getTime()) ? exitDate : null;
+
+  if (!validEntry && !validExit) return null; // ikisi de yoksa drop
+
+  // BRY bazen girişi kaçırır, sadece çıkış kaydeder. bkdsRaw.girisZamani
+  // required olduğu için fallback: çıkış varsa onu giriş olarak kullan. Bu,
+  // tumOgrenciGirisler aggregate'inde ilkGiris = sonCikis yapar — UI çıkışı
+  // mutlaka gösterir (giriş alanı ayrıca doğru değilse de).
+  const effectiveEntry = validEntry ?? validExit!;
 
   return {
     individual_uuid: String(uuid),
     individual_full_name: String(fullName),
     individual_identity_number: idNumber ? String(idNumber) : '',
     individual_type: individualType ?? 1,
-    first_entry: entryDate.toISOString(),
+    first_entry: effectiveEntry.toISOString(),
     last_exit: validExit ? validExit.toISOString() : null,
   };
 }
