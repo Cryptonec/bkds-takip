@@ -2,13 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 /**
- * Türkçe TTS endpoint — Microsoft Edge'in Azure Neural TTS servisini kullanır.
- * Windows TTS ayarlarından bağımsız; sistemde Türkçe konuşma paketi olmasa
- * bile çalışır. Limit pratik olarak yok (Azure free tier çok geniş).
- *
- * GET /api/tts?text=Merhaba → MP3 audio stream döner
+ * Türkçe TTS endpoint — Microsoft Edge Neural TTS (Azure) kullanır.
+ * Windows konuşma paketine bağımlı değildir; sistemde ses yüklü olmasa bile
+ * çalışır. Gerektirdiği: internet.
  */
 export async function GET(req: NextRequest) {
   const text = req.nextUrl.searchParams.get('text')?.trim();
@@ -24,28 +23,37 @@ export async function GET(req: NextRequest) {
 
   try {
     const tts = new MsEdgeTTS();
-    // tr-TR-AhmetNeural: erkek, sıcak ton
-    // tr-TR-EmelNeural: kadın, profesyonel
     await tts.setMetadata('tr-TR-EmelNeural', OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
     const { audioStream } = tts.toStream(text);
 
-    // Node Readable → Web ReadableStream
-    const webStream = new ReadableStream({
-      start(controller) {
-        audioStream.on('data', (chunk: Buffer) => controller.enqueue(chunk));
-        audioStream.on('end', () => controller.close());
-        audioStream.on('error', (err: Error) => controller.error(err));
-      },
+    // Tüm stream'i buffer'a topla — sonra tek response olarak gönder.
+    // Stream chunked response'a göre tarayıcılar çok daha güvenilir oynatır.
+    const chunks: Buffer[] = [];
+    await new Promise<void>((resolve, reject) => {
+      audioStream.on('data', (chunk: Buffer) => chunks.push(chunk));
+      audioStream.on('end', () => resolve());
+      audioStream.on('close', () => resolve());
+      audioStream.on('error', (err: Error) => reject(err));
+      // Güvenlik: 15sn timeout
+      setTimeout(() => reject(new Error('TTS timeout (15sn)')), 15_000);
     });
 
-    return new NextResponse(webStream, {
+    const audio = Buffer.concat(chunks);
+    if (audio.length === 0) {
+      return NextResponse.json({ error: 'TTS boş ses döndü' }, { status: 500 });
+    }
+
+    return new NextResponse(audio, {
       headers: {
         'Content-Type': 'audio/mpeg',
-        'Cache-Control': 'public, max-age=3600', // kısa süreli client cache
+        'Content-Length': String(audio.length),
+        'Cache-Control': 'public, max-age=3600',
       },
     });
   } catch (err: any) {
-    console.error('[TTS] hata:', err?.message ?? err);
-    return NextResponse.json({ error: err?.message ?? 'TTS hatası' }, { status: 500 });
+    const msg = err?.message ?? String(err);
+    console.error('[TTS] hata:', msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
+
