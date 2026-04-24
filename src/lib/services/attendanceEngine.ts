@@ -21,7 +21,10 @@ export function calculateAttendanceStatus(input: AttendanceInput): AttendanceSta
   const dersBitis = new Date(lesson.bitis);
   const gecenDakika = minutesDiff(dersBaslangic, now);
 
-  if (now < dersBaslangic) return 'bekleniyor';
+  if (now < dersBaslangic) {
+    // Ders henüz başlamadı ama öğrenci BKDS'ye girişini yapmışsa "erken geldi"
+    return bkdsGiris ? 'erken_geldi' : 'bekleniyor';
+  }
 
   if (!bkdsGiris) {
     if (gecenDakika < 5) return 'bekleniyor';
@@ -58,6 +61,7 @@ export function calculateAttendanceStatus(input: AttendanceInput): AttendanceSta
 export function getAttendanceStatusInfo(status: AttendanceStatus | string) {
   const map: Record<AttendanceStatus, { label: string; color: string; bg: string; border: string }> = {
     bekleniyor:  { label: 'Bekleniyor',   color: 'text-gray-500',    bg: 'bg-gray-50',    border: 'border-gray-200' },
+    erken_geldi: { label: 'Erken Geldi',  color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-300' },
     gecikiyor:   { label: 'Gecikiyor',    color: 'text-yellow-700',  bg: 'bg-yellow-50',  border: 'border-yellow-300' },
     giris_eksik: { label: 'Giriş Eksik', color: 'text-orange-700',  bg: 'bg-orange-50',  border: 'border-orange-300' },
     kritik:      { label: 'Kritik',       color: 'text-red-700',     bg: 'bg-red-50',     border: 'border-red-400' },

@@ -8,6 +8,7 @@ export type Role = typeof ROLES[number];
 
 export const ATTENDANCE_STATUSES = [
   'bekleniyor',
+  'erken_geldi',
   'gecikiyor',
   'giris_eksik',
   'kritik',

@@ -2,7 +2,7 @@
 import { cn } from '@/lib/utils';
 import {
   AlertTriangle, LogOut, Clock, CheckCircle2, Users, Shield, XCircle,
-  Timer, PlayCircle, CalendarDays, TimerOff,
+  Timer, PlayCircle, CalendarDays, TimerOff, UserCheck,
 } from 'lucide-react';
 
 export interface LegendItem {
@@ -30,6 +30,7 @@ export const LEGEND: LegendItem[] = [
   { key: 'erken_cikis', label: 'Erken Çıkış',          colorClass: 'bg-pink-500',    textOnCard: 'text-white',      textClass: 'text-pink-700',    icon: LogOut,        symbol: '◆' },
   { key: 'cikis_eksik', label: 'Çıkış Eksik',          colorClass: 'bg-fuchsia-700', textOnCard: 'text-white',      textClass: 'text-fuchsia-700', icon: TimerOff,      symbol: '▼' },
   { key: 'bekleniyor',  label: 'Bekleniyor',           colorClass: 'bg-slate-500',   textOnCard: 'text-white',      textClass: 'text-slate-700',   icon: CalendarDays,  symbol: '○' },
+  { key: 'erken_geldi', label: 'Erken Geldi (BKDS Var)', colorClass: 'bg-emerald-500', textOnCard: 'text-white',     textClass: 'text-emerald-700', icon: UserCheck,     symbol: '★' },
   { key: 'bkds_muaf',   label: 'BKDS Muaf',            colorClass: 'bg-indigo-500',  textOnCard: 'text-white',      textClass: 'text-indigo-700',  icon: Shield,        symbol: '◇' },
 ];
 
