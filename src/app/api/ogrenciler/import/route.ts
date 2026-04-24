@@ -7,12 +7,13 @@ import { parseStudentNamesFromSheet } from '@/lib/utils/parseStudentNames';
 import * as XLSX from 'xlsx';
 
 /**
- * Toplu öğrenci yükleme — Excel/CSV/Lila xls'den.
+ * Toplu öğrenci yükleme — Excel/CSV/Lila xls/HTML'den.
  *
  * Akış:
- *  1. Dosya başı '<' ile başlıyorsa → Lila HTML XLS (yoklama) parser'ı
- *  2. Aksi halde XLSX binary → sheet_to_json (header:1) → satır matrisi
- *     → parseStudentNamesFromSheet() çoklu formatı otomatik algılar
+ *  1. Dosya HTML ise (Lila yoklama / öğrenci listesi): <tr>/<td> → satır matrisi
+ *     → önce yoklama-özel çıkarıcı (tarih sütunlu), boşsa genel parser
+ *  2. Gerçek XLSX binary: sheet_to_json (header:1) → satır matrisi
+ *     → parseStudentNamesFromSheet (4 format)
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -27,20 +28,30 @@ export async function POST(req: NextRequest) {
 
   let isimler: string[] = [];
   let formatTipi = 'bilinmeyen';
-  let debug: { ilkSatirlar?: unknown[][] } | undefined;
+  let rows: unknown[][] = [];
 
   const head = buffer.slice(0, 200).toString('utf-8').trim().toLowerCase();
-  if (head.startsWith('<') && (head.includes('<table') || head.includes('<html') || head.includes('<tr'))) {
-    isimler = extractFromLilaHtmlXls(buffer);
-    formatTipi = 'lila-html-xls';
+  const isHtml = head.startsWith('<') && (head.includes('<table') || head.includes('<html') || head.includes('<tr'));
+
+  if (isHtml) {
+    rows = htmlTableToRows(buffer);
+    // Önce Lila yoklama'ya özel çıkarım (tarih sütununa göre)
+    const yoklamaNames = extractYoklamaNames(rows);
+    if (yoklamaNames.length > 0) {
+      isimler = yoklamaNames;
+      formatTipi = 'lila-yoklama-html';
+    } else {
+      // Yoklama değil — genel tablo parser'ına düş
+      isimler = parseStudentNamesFromSheet(rows);
+      formatTipi = 'lila-ogrenci-html';
+    }
   } else {
     try {
       const wb = XLSX.read(buffer, { type: 'buffer' });
       const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
       isimler = parseStudentNamesFromSheet(rows);
       formatTipi = 'xlsx';
-      debug = { ilkSatirlar: rows.slice(0, 5) };
     } catch (err: any) {
       return NextResponse.json({
         eklenen: 0, atlanan: 0, hatali: 1, toplam: 0, formatTipi: 'hata',
@@ -51,11 +62,11 @@ export async function POST(req: NextRequest) {
 
   if (isimler.length === 0) {
     const errors: Array<{ row: number; reason: string }> = [
-      { row: 0, reason: 'Dosyadan hiç öğrenci ismi çıkarılamadı. Desteklenen formatlar: Lila öğrenci listesi xls, BRY öğrenci listesi Excel (ADI/SOYADI ayrı kolon), tek sütun isim listesi.' },
+      { row: 0, reason: 'Dosyadan hiç öğrenci ismi çıkarılamadı. Desteklenen: Lila öğrenci listesi/yoklama, BRY öğrenci listesi (ADI/SOYADI), tek sütun isim listesi.' },
     ];
-    if (debug?.ilkSatirlar) {
-      errors.push({ row: 0, reason: `Dosyanın ilk ${debug.ilkSatirlar.length} satırı (debug):` });
-      debug.ilkSatirlar.forEach((row, i) => {
+    if (rows.length > 0) {
+      errors.push({ row: 0, reason: `Tespit edilen format: ${formatTipi}. Dosyanın ilk ${Math.min(rows.length, 5)} satırı:` });
+      rows.slice(0, 5).forEach((row, i) => {
         const cells = Array.isArray(row) ? row.slice(0, 10).map(c => String(c ?? '')).join(' | ') : String(row);
         errors.push({ row: i + 1, reason: cells || '(boş)' });
       });
@@ -95,20 +106,36 @@ export async function POST(req: NextRequest) {
   });
 }
 
-/** Lila yoklama HTML XLS — cells[3] = öğrenci tam adı. */
-function extractFromLilaHtmlXls(buffer: Buffer): string[] {
+/** HTML tablosundan <tr>/<td> hücre matrisi çıkar. */
+function htmlTableToRows(buffer: Buffer): unknown[][] {
   const content = buffer.toString('utf-8');
   const rowMatches = content.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) ?? [];
-  const out: string[] = [];
+  const rows: unknown[][] = [];
   for (const rowHtml of rowMatches) {
     const cells = (rowHtml.match(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi) ?? [])
-      .map(cell => cell.replace(/<[^>]+>/g, '').trim());
+      .map(cell =>
+        cell
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/gi, ' ')
+          .replace(/&amp;/gi, '&')
+          .replace(/\s+/g, ' ')
+          .trim()
+      );
+    rows.push(cells);
+  }
+  return rows;
+}
+
+/** Lila yoklama HTML XLS — her satırda tarih sütunu var, cells[3] = öğrenci adı. */
+function extractYoklamaNames(rows: unknown[][]): string[] {
+  const out: string[] = [];
+  for (const r of rows) {
+    const cells = (r as string[]) ?? [];
     if (cells.length < 4) continue;
-    if (!/^\d+$/.test(cells[0])) continue;
+    if (!/^\d+$/.test(cells[0] ?? '')) continue;
     if (!/\d{2}\.\d{2}\.\d{4}/.test(cells[1] ?? '')) continue;
     const ad = (cells[3] ?? '').trim();
     if (ad && ad.length >= 2) out.push(ad);
   }
-  // Lila yoklamada her öğrenci her dersi için tekrar eder — benzersizleştir
   return Array.from(new Set(out));
 }
