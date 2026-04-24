@@ -3,17 +3,31 @@ import { getServerSession } from 'next-auth';
 import { authOptions, getOrgId } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { recalculateAttendance } from '@/lib/services/attendanceService';
+import { normalizeName } from '@/lib/utils/normalize';
 import { z } from 'zod';
 
 const createSchema = z.object({
   studentId: z.string().min(1),
-  staffId: z.string().min(1),
+  staffId: z.string().nullable().optional(),
   tarih: z.string().min(1),
   baslangic: z.string().min(1),
   bitis: z.string().min(1),
-  derslik: z.string().min(1),
+  derslik: z.string().optional().default('Belirtilmemiş'),
   bkdsRequired: z.boolean().optional().default(true),
 });
+
+/** 'Belirtilmemiş Personel' kaydını bul veya oluştur — staff atanmamış dersler için */
+async function getOrCreateDefaultStaff(orgId: string) {
+  const ad = 'Belirtilmemiş Personel';
+  const norm = normalizeName(ad);
+  let staff = await prisma.staff.findFirst({ where: { organizationId: orgId, normalizedName: norm } });
+  if (!staff) {
+    staff = await prisma.staff.create({
+      data: { organizationId: orgId, adSoyad: ad, normalizedName: norm },
+    });
+  }
+  return staff;
+}
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -28,12 +42,18 @@ export async function POST(req: NextRequest) {
 
   const { studentId, staffId, tarih, baslangic, bitis, derslik, bkdsRequired } = parsed.data;
 
-  const [student, staff] = await Promise.all([
-    prisma.student.findFirst({ where: { id: studentId, organizationId: orgId } }),
-    prisma.staff.findFirst({ where: { id: staffId, organizationId: orgId } }),
-  ]);
+  const student = await prisma.student.findFirst({ where: { id: studentId, organizationId: orgId } });
   if (!student) return NextResponse.json({ error: 'Öğrenci bulunamadı' }, { status: 404 });
-  if (!staff) return NextResponse.json({ error: 'Personel bulunamadı' }, { status: 404 });
+
+  let staff;
+  if (staffId) {
+    staff = await prisma.staff.findFirst({ where: { id: staffId, organizationId: orgId } });
+    if (!staff) return NextResponse.json({ error: 'Personel bulunamadı' }, { status: 404 });
+  } else {
+    staff = await getOrCreateDefaultStaff(orgId);
+  }
+
+  const effectiveDerslik = derslik && derslik.trim() ? derslik : 'Belirtilmemiş';
 
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
@@ -51,11 +71,11 @@ export async function POST(req: NextRequest) {
     data: {
       organizationId: orgId,
       studentId,
-      staffId,
+      staffId: staff.id,
       tarih: dateOnly,
       baslangic: baslangicDt,
       bitis: bitisDt,
-      derslik,
+      derslik: effectiveDerslik,
       bkdsRequired,
     },
   });

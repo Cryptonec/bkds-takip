@@ -5,7 +5,7 @@ import type { OgrenciRow } from '@/lib/hooks/useLiveAttendance';
 import { cn } from '@/lib/utils';
 import {
   AlertTriangle, CheckCircle2, Shield, ChevronDown, ChevronUp, UserCheck,
-  Eye, EyeOff, LogOut, Trash2,
+  LogOut, Trash2,
 } from 'lucide-react';
 import { LEGEND_MAP } from './ColorLegend';
 
@@ -118,7 +118,6 @@ interface OgrenciPaneliProps {
 export function OgrenciPaneli({ rows, filter, colorblind = false, onDelete }: OgrenciPaneliProps) {
   const now = new Date();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ gecmis: true, muaf: true });
-  const [derslikGizli, setDerslikGizli] = useState(false);
 
   const filtered = filter && filter !== 'hepsi' ? rows.filter(r => r.status === filter) : rows;
   if (filtered.length === 0) {
@@ -130,15 +129,6 @@ export function OgrenciPaneli({ rows, filter, colorblind = false, onDelete }: Og
 
   return (
     <div>
-      <div className="flex justify-end px-4 py-2 border-b border-gray-100 bg-gray-50">
-        <button
-          onClick={() => setDerslikGizli(v => !v)}
-          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 bg-white px-3 py-1.5 rounded-lg transition-colors"
-        >
-          {derslikGizli ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-          {derslikGizli ? 'Derslik Göster' : 'Derslik Gizle'}
-        </button>
-      </div>
 
       {/* Saat saat kart grupları */}
       <div>
@@ -191,7 +181,6 @@ export function OgrenciPaneli({ rows, filter, colorblind = false, onDelete }: Og
                       <OgrenciKart
                         key={row.id}
                         row={row}
-                        derslikGizli={derslikGizli}
                         colorblind={colorblind}
                         onDelete={onDelete}
                       />
@@ -224,7 +213,6 @@ export function OgrenciPaneli({ rows, filter, colorblind = false, onDelete }: Og
                     <OgrenciKart
                       key={row.id}
                       row={row}
-                      derslikGizli={derslikGizli}
                       colorblind={colorblind}
                       onDelete={onDelete}
                     />
@@ -242,10 +230,9 @@ export function OgrenciPaneli({ rows, filter, colorblind = false, onDelete }: Og
 /* ─── Tek kart ─────────────────────────────────────────────────────────── */
 
 function OgrenciKart({
-  row, derslikGizli, colorblind, onDelete,
+  row, colorblind, onDelete,
 }: {
   row: OgrenciRow;
-  derslikGizli: boolean;
   colorblind: boolean;
   onDelete?: (lessonSessionId: string, ogrenciAdi: string) => void;
 }) {
@@ -310,14 +297,6 @@ function OgrenciKart({
         <p className="font-bold text-sm uppercase tracking-tight leading-tight truncate" title={row.ogrenciAdi}>
           {row.ogrenciAdi}
         </p>
-        <p className="text-[11px] opacity-85 truncate" title={row.ogretmenAdi}>
-          {row.ogretmenAdi}
-        </p>
-        {!derslikGizli && (
-          <p className="text-[11px] opacity-75 truncate" title={row.derslik}>
-            {row.derslik}
-          </p>
-        )}
       </div>
 
       {/* Alt: saat aralığı + giriş/çıkış */}

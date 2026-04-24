@@ -229,7 +229,6 @@ export class BkdsProviderService {
     dateOnly.setHours(0, 0, 0, 0);
 
     // Ham verileri kaydet — zorunlu alanları doğrula, geçersiz kayıtları at
-    await prisma.bkdsRaw.deleteMany({ where: { organizationId: orgId, tarih: dateOnly } });
     const rawRows = records
       .map(r => {
         const giris = new Date(r.first_entry);
@@ -251,9 +250,12 @@ export class BkdsProviderService {
     if (rawRows.length !== records.length) {
       console.warn(`[BKDS][${orgId}] ${records.length - rawRows.length} kayıt geçersiz alan nedeniyle atlandı`);
     }
-    if (rawRows.length > 0) {
-      await prisma.bkdsRaw.createMany({ data: rawRows });
-    }
+
+    // Atomik delete+create — client polling asla boş görmez
+    await prisma.$transaction([
+      prisma.bkdsRaw.deleteMany({ where: { organizationId: orgId, tarih: dateOnly } }),
+      ...(rawRows.length > 0 ? [prisma.bkdsRaw.createMany({ data: rawRows })] : []),
+    ]);
 
     const bireyRecords    = records.filter(r => r.individual_type === 1);
     const personelRecords = records.filter(r => r.individual_type === 2);
@@ -313,7 +315,19 @@ export class BkdsProviderService {
       personelMap.set(r.individual_full_name, ex);
     }
 
-    await prisma.bkdsPersonelLog.deleteMany({ where: { organizationId: orgId, tarih: dateOnly } });
+    // Önce tüm personel log verilerini hesapla + staffSession update'lerini topla
+    type PersonelLogInsert = {
+      organizationId: string;
+      tarih: Date;
+      maskedAd: string;
+      ilkGiris: Date;
+      sonCikis: Date | null;
+      staffId: string | null;
+      eslesmeDurumu: string;
+      tahminEdilenAd: string | null;
+    };
+    const personelLogsToInsert: PersonelLogInsert[] = [];
+    const staffSessionUpdates: Array<{ staffId: string; ilkGiris: Date; sonCikis: Date | null }> = [];
 
     for (const [maskedName, recs] of personelMap.entries()) {
       const ilkGiris = new Date(Math.min(...recs.map(r => new Date(r.first_entry).getTime())));
@@ -332,51 +346,45 @@ export class BkdsProviderService {
           .filter(x => x.result.type === 'prefix_eslesme')
           .sort((a, b) => b.result.score - a.result.score);
 
-        if (prefixMatches.length === 1) {
+        if (prefixMatches.length >= 1) {
           matchedStaff = prefixMatches[0].staff;
           eslesmeTipi = 'prefix_eslesme';
-          tahminEdilenAd = prefixMatches[0].staff.adSoyad;
-          console.log(`[BKDS][${orgId}] Soyisim değişikliği tahmini: "${maskedName}" → "${matchedStaff.adSoyad}"`);
-        } else if (prefixMatches.length > 1) {
-          matchedStaff = prefixMatches[0].staff;
-          eslesmeTipi = 'prefix_eslesme';
-          tahminEdilenAd = prefixMatches.map(x => x.staff.adSoyad).join(' / ');
-          console.log(`[BKDS][${orgId}] Çoklu prefix eşleşme: "${maskedName}" → ${tahminEdilenAd}`);
-        } else {
-          eslesmeTipi = 'eslesme_yok';
-          console.log(`[BKDS][${orgId}] Eşleşme yok: "${maskedName}"`);
+          tahminEdilenAd = prefixMatches.length === 1
+            ? prefixMatches[0].staff.adSoyad
+            : prefixMatches.map(x => x.staff.adSoyad).join(' / ');
         }
       }
 
-      await prisma.bkdsPersonelLog.create({
-        data: {
-          organizationId: orgId,
-          tarih: dateOnly,
-          maskedAd: maskedName,
-          ilkGiris,
-          sonCikis,
-          staffId: matchedStaff?.id ?? null,
-          eslesmeDurumu: eslesmeTipi,
-          tahminEdilenAd: tahminEdilenAd ?? null,
-        },
+      personelLogsToInsert.push({
+        organizationId: orgId,
+        tarih: dateOnly,
+        maskedAd: maskedName,
+        ilkGiris,
+        sonCikis,
+        staffId: matchedStaff?.id ?? null,
+        eslesmeDurumu: eslesmeTipi,
+        tahminEdilenAd: tahminEdilenAd ?? null,
       });
 
       if (matchedStaff) {
-        const sessions = await prisma.staffSession.findMany({
-          where: { organizationId: orgId, staffId: matchedStaff.id, tarih: dateOnly },
-        });
-
-        for (const session of sessions) {
-          await prisma.staffSession.update({
-            where: { id: session.id },
-            data: { basladiMi: true, baslamaZamani: ilkGiris, sonCikisZamani: sonCikis },
-          });
-        }
-
-        if (sessions.length === 0) {
-          console.log(`[BKDS][${orgId}] ${matchedStaff.adSoyad} bugün dersi yok ama kuruma gelmiş`);
-        }
+        staffSessionUpdates.push({ staffId: matchedStaff.id, ilkGiris, sonCikis });
       }
+    }
+
+    // Atomik delete+create — personel takibi sayısı stabil kalır
+    await prisma.$transaction([
+      prisma.bkdsPersonelLog.deleteMany({ where: { organizationId: orgId, tarih: dateOnly } }),
+      ...(personelLogsToInsert.length > 0
+        ? [prisma.bkdsPersonelLog.createMany({ data: personelLogsToInsert })]
+        : []),
+    ]);
+
+    // StaffSession güncellemeleri — transaction dışı (UI'ya etkisiz)
+    for (const upd of staffSessionUpdates) {
+      await prisma.staffSession.updateMany({
+        where: { organizationId: orgId, staffId: upd.staffId, tarih: dateOnly },
+        data: { basladiMi: true, baslamaZamani: upd.ilkGiris, sonCikisZamani: upd.sonCikis },
+      });
     }
   }
 }

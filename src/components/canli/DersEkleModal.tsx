@@ -35,8 +35,8 @@ export function DersEkleModal({ open, onClose, onCreated, defaultTarih }: DersEk
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (!studentId || !staffId || !derslik || !tarih) {
-      setError('Tüm alanları doldurun');
+    if (!studentId || !tarih || !baslangic || !bitis) {
+      setError('Öğrenci ve saat alanları zorunlu');
       return;
     }
     setLoading(true);
@@ -47,13 +47,23 @@ export function DersEkleModal({ open, onClose, onCreated, defaultTarih }: DersEk
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          studentId, staffId, tarih, baslangic: baslangicIso, bitis: bitisIso,
-          derslik, bkdsRequired,
+          studentId,
+          staffId: staffId || null,
+          tarih,
+          baslangic: baslangicIso,
+          bitis: bitisIso,
+          derslik: derslik || 'Belirtilmemiş',
+          bkdsRequired,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(typeof data.error === 'string' ? data.error : 'Ders eklenemedi');
+        const msg = typeof data.error === 'string'
+          ? data.error
+          : data?.error?.fieldErrors
+            ? Object.entries(data.error.fieldErrors).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' | ')
+            : 'Ders eklenemedi';
+        setError(msg);
         return;
       }
       onCreated();
@@ -84,10 +94,10 @@ export function DersEkleModal({ open, onClose, onCreated, defaultTarih }: DersEk
             </select>
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 block mb-1">Personel (Öğretmen)</label>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">Personel (Öğretmen) <span className="text-gray-400 font-normal">— opsiyonel</span></label>
             <select value={staffId} onChange={e => setStaffId(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-              <option value="">— Seçin —</option>
+              <option value="">— Belirtilmemiş —</option>
               {staff.map(s => <option key={s.id} value={s.id}>{s.adSoyad}</option>)}
             </select>
           </div>
@@ -109,9 +119,9 @@ export function DersEkleModal({ open, onClose, onCreated, defaultTarih }: DersEk
             </div>
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-600 block mb-1">Derslik</label>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">Derslik <span className="text-gray-400 font-normal">— opsiyonel</span></label>
             <input type="text" value={derslik} onChange={e => setDerslik(e.target.value)}
-              placeholder="A-101"
+              placeholder="A-101 (boş bırakılabilir)"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
           </div>
           <label className="flex items-center gap-2 text-sm text-gray-700">

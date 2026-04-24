@@ -343,7 +343,7 @@ export default function CanliPage() {
         <div className="flex">
           {[
             { key: 'ogrenci', label: 'Öğrenci Takibi', count: data?.ogrenciRows.length },
-            { key: 'personel', label: 'Personel Takibi', count: data?.personelRows?.length ?? 0 },
+            { key: 'personel', label: 'Personel Takibi', count: (data?.tumPersonelGirisler ?? []).filter((p: any) => p.ilkGiris).length },
           ].map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
               className={cn('px-5 py-3 text-sm font-medium border-b-2 transition-colors',
