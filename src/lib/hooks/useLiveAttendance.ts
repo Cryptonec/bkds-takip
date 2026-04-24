@@ -310,13 +310,14 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
       if ('speechSynthesis' in window) window.speechSynthesis.getVoices();
     }
     fetchData();
-    const interval = setInterval(fetchData, intervalMs);
+    // intervalMs <= 0 ise otomatik yenileme kapalı, sadece ilk fetch + event'ler
+    const interval = intervalMs > 0 ? setInterval(fetchData, intervalMs) : null;
     const onVis = () => { if (document.visibilityState === 'visible') fetchData(); };
     const onFocus = () => fetchData();
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('focus', onFocus);
     return () => {
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('focus', onFocus);
     };

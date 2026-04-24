@@ -117,7 +117,7 @@ interface OgrenciPaneliProps {
 
 export function OgrenciPaneli({ rows, filter, colorblind = false, onDelete }: OgrenciPaneliProps) {
   const now = new Date();
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ gecmis: true, muaf: true });
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ muaf: true });
 
   const filtered = filter && filter !== 'hepsi' ? rows.filter(r => r.status === filter) : rows;
   if (filtered.length === 0) {
@@ -135,7 +135,7 @@ export function OgrenciPaneli({ rows, filter, colorblind = false, onDelete }: Og
         {saatGruplari.map(({ saat, satirlar, zamanGrubu }) => {
           const stil = ZAMAN_STIL[zamanGrubu];
           const key = `saat-${saat}`;
-          const isOpen = !(collapsed[key] ?? zamanGrubu === 'gecmis');
+          const isOpen = !(collapsed[key] ?? false);
           const sorunlu = satirlar.filter(r => ['kritik','giris_eksik','gecikiyor','erken_cikis'].includes(r.status)).length;
           const tamam = satirlar.filter(r => ['tamamlandi','derste','giris_tamam'].includes(r.status)).length;
 
