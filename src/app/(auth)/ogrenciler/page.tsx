@@ -64,12 +64,20 @@ export default function OgrencilerPage() {
     try {
       const res = await fetch('/api/ogrenciler/import', { method: 'POST', body: fd });
       const data = await res.json();
-      if (!res.ok) {
-        setImportResult({ eklenen: 0, atlanan: 0, hatali: 1, toplam: 0, errors: [{ row: 0, reason: data.error ?? 'Yükleme başarısız' }] });
-      } else {
+      // API her iki durumda da {eklenen, atlanan, hatali, toplam, errors} döner.
+      // errors varsa onu göster; yoksa generic fallback.
+      if (data.errors || data.eklenen !== undefined) {
         setImportResult(data);
-        load();
+      } else {
+        setImportResult({
+          eklenen: 0,
+          atlanan: 0,
+          hatali: 1,
+          toplam: 0,
+          errors: [{ row: 0, reason: data.error ?? 'Yükleme başarısız' }],
+        });
       }
+      load();
     } catch (err: any) {
       setImportResult({ eklenen: 0, atlanan: 0, hatali: 1, toplam: 0, errors: [{ row: 0, reason: err.message }] });
     } finally {
