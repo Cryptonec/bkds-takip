@@ -70,10 +70,31 @@ export async function GET(req: NextRequest) {
   const dateOnly = new Date(tarih);
   dateOnly.setHours(0, 0, 0, 0);
 
-  // BKDS'yi arka planda tetikle — client beklemez (atomik transaction sayesinde
-  // DB yarım state asla görünmez, flicker da olmaz)
+  // İlk istekte BKDS'yi BLOCKING senkron çek — istemci ilk açılışta bos veri
+  // görmesin (özellikle /ekran'da personel verisi bos kalıyordu). Sonraki
+  // isteklerde arka planda non-blocking.
   const lastFetch = lastBkdsFetchMap.get(orgId) ?? 0;
-  if ((now.getTime() - lastFetch) >= BKDS_FETCH_INTERVAL) {
+  const isFirstFetchForOrg = !lastBkdsFetchMap.has(orgId) && !inFlightMap.has(orgId);
+
+  if (isFirstFetchForOrg) {
+    // İlk çağrı — senkron çek (maks 8sn) ki client empty data görmesin
+    lastBkdsFetchMap.set(orgId, now.getTime());
+    try {
+      const service = getBkdsService(orgId);
+      const records = await Promise.race([
+        service.fetchToday(),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('BKDS timeout 8sn')), 8_000)),
+      ]);
+      await service.saveAndAggregate(records as any, tarih);
+      await recalculateAttendance(tarih, orgId, now);
+      await recalculateStaffAttendance(tarih, orgId, now);
+      await generateAlerts(tarih, orgId);
+      lastBkdsErrorMap.delete(orgId);
+    } catch (err: any) {
+      console.error('[Attendance] ilk senkron hatasi:', err?.message ?? err);
+      lastBkdsErrorMap.set(orgId, { at: Date.now(), message: err?.message ?? String(err) });
+    }
+  } else if ((now.getTime() - lastFetch) >= BKDS_FETCH_INTERVAL) {
     refreshBkdsInBackground(orgId, tarih);
   }
 

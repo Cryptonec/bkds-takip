@@ -25,7 +25,7 @@ export const LEGEND: LegendItem[] = [
   { key: 'giris_eksik', label: 'Giriş Eksik',          colorClass: 'bg-orange-500',  textOnCard: 'text-white',      textClass: 'text-orange-700',  icon: AlertTriangle, symbol: '▲' },
   { key: 'gec_geldi',   label: 'Geç Geldi',            colorClass: 'bg-amber-700',   textOnCard: 'text-white',      textClass: 'text-amber-800',   icon: Clock,         symbol: '◐' },
   { key: 'gecikiyor',   label: 'Gecikiyor',            colorClass: 'bg-yellow-300',  textOnCard: 'text-yellow-900', textClass: 'text-yellow-700',  icon: Timer,         symbol: '●' },
-  { key: 'derste',      label: 'Derste / Giriş Tamam', colorClass: 'bg-sky-500',     textOnCard: 'text-white',      textClass: 'text-sky-700',     icon: PlayCircle,    symbol: '✓' },
+  { key: 'derste',      label: 'Derste / Giriş Tamam', colorClass: 'bg-sky-500',     textOnCard: 'text-white',      textClass: 'text-sky-700',     icon: PlayCircle,    symbol: '▶' },
   { key: 'tamamlandi',  label: 'Tamamlandı',           colorClass: 'bg-teal-600',    textOnCard: 'text-white',      textClass: 'text-teal-700',    icon: CheckCircle2,  symbol: '✔' },
   { key: 'erken_cikis', label: 'Erken Çıkış',          colorClass: 'bg-pink-500',    textOnCard: 'text-white',      textClass: 'text-pink-700',    icon: LogOut,        symbol: '◆' },
   { key: 'cikis_eksik', label: 'Çıkış Eksik',          colorClass: 'bg-fuchsia-700', textOnCard: 'text-white',      textClass: 'text-fuchsia-700', icon: TimerOff,      symbol: '▼' },
