@@ -22,27 +22,33 @@ function toTurkishTitle(text: string): string {
     .replace(/Ç/g, 'ç');
 }
 
+// TTS kuyruğu — çoklu giriş/çıkışta sırayla söylensin
+const _ttsQueue: string[] = [];
+let _ttsPlaying = false;
+
+function _playNext() {
+  if (_ttsPlaying || _ttsQueue.length === 0) return;
+  const text = _ttsQueue.shift()!;
+  _ttsPlaying = true;
+  try {
+    const audio = new Audio(`/api/tts?text=${encodeURIComponent(text)}`);
+    audio.volume = 1.0;
+    audio.playbackRate = 1.25; // biraz daha hızlı konuşma
+    audio.addEventListener('ended', () => { _ttsPlaying = false; _playNext(); });
+    audio.addEventListener('error', () => { _ttsPlaying = false; _playNext(); });
+    audio.play().catch(() => { _ttsPlaying = false; _playNext(); });
+  } catch {
+    _ttsPlaying = false;
+    _playNext();
+  }
+}
+
 function speak(text: string) {
   if (typeof window === 'undefined') return;
   if (text.includes('*')) return;
   const normalized = toTurkishTitle(text);
-  try {
-    const audio = new Audio(`/api/tts?text=${encodeURIComponent(normalized)}`);
-    audio.volume = 1.0;
-    audio.play().catch(() => {
-      // Autoplay engel: sistem Türkçe sesi varsa fallback
-      if ('speechSynthesis' in window) {
-        const voices = window.speechSynthesis.getVoices();
-        const trVoice = voices.find(v => v.lang.toLowerCase().startsWith('tr'));
-        if (trVoice) {
-          const utt = new SpeechSynthesisUtterance(normalized);
-          utt.lang = 'tr-TR';
-          utt.voice = trVoice;
-          window.speechSynthesis.speak(utt);
-        }
-      }
-    });
-  } catch {}
+  _ttsQueue.push(normalized);
+  _playNext();
 }
 
 function seslendir(kayit: Kayit) {
@@ -224,19 +230,18 @@ function useBildirimEkrani(sesAcik: boolean) {
       setGirisler(prev => listEsdeger(prev, sortedGiris) ? prev : sortedGiris);
       setCikislar(prev => listEsdeger(prev, sortedCikis) ? prev : sortedCikis);
 
-      // Ses + animasyon — yeni eklenenler için beep + TTS (tek en yeni kaydı seslendir)
+      // Ses + animasyon — YENİ EKLENEN HER KAYIT için beep + TTS. TTS server
+      // endpoint'inde kuyruk var, üst üste çalmaz sırayla söyler.
       if (!isFirst.current) {
-        const enYeniGiris = eklenenGirisler.sort((a,b) => b.ts - a.ts)[0];
-        const enYeniCikis = eklenenCikislar.sort((a,b) => b.ts - a.ts)[0];
         eklenenGirisler.forEach(k => markYeni(k.id));
         eklenenCikislar.forEach(k => markYeni(k.id));
-        if (enYeniGiris && sesAcikRef.current) {
+        if (eklenenGirisler.length > 0 && sesAcikRef.current) {
           calarGiris();
-          setTimeout(() => seslendir(enYeniGiris), 400);
+          eklenenGirisler.forEach(k => setTimeout(() => seslendir(k), 400));
         }
-        if (enYeniCikis && sesAcikRef.current) {
+        if (eklenenCikislar.length > 0 && sesAcikRef.current) {
           calarCikis();
-          setTimeout(() => seslendir(enYeniCikis), 400);
+          eklenenCikislar.forEach(k => setTimeout(() => seslendir(k), 400));
         }
       }
 
@@ -260,7 +265,7 @@ function useBildirimEkrani(sesAcik: boolean) {
 
   useEffect(() => {
     poll();
-    const t = setInterval(poll, 2000);
+    const t = setInterval(poll, 1000);
     const onVis = () => { if (document.visibilityState==='visible') poll(); };
     const onFocus = () => poll();
     document.addEventListener('visibilitychange', onVis);

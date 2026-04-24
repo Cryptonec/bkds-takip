@@ -18,7 +18,7 @@ export const fetchCache = 'force-no-store';
 const lastBkdsFetchMap = new Map<string, number>();
 const lastBkdsErrorMap = new Map<string, { at: number; message: string }>();
 const inFlightMap = new Map<string, number>();
-const BKDS_FETCH_INTERVAL = 1500;
+const BKDS_FETCH_INTERVAL = 1000;
 const STUCK_FETCH_MS = 20_000;
 
 /**

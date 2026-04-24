@@ -96,26 +96,43 @@ function speak(text: string) {
   if (typeof window === 'undefined') return;
   if (text.includes('*')) return; // Maskeli isim — söyleme
   const normalized = toTurkishTitle(text);
+  enqueueSpeech(normalized);
+}
 
-  // Her zaman sunucu-tarafı Edge Neural TTS endpoint'ini kullan.
-  // Windows TTS ayarından bağımsız, yüksek kalite, pratik limitsiz.
+// TTS kuyruğu — birden çok kayıt gelirse üst üste çalmasın, sırayla söylesin
+let speechQueue: string[] = [];
+let speechPlaying = false;
+
+function enqueueSpeech(text: string) {
+  speechQueue.push(text);
+  playNextInQueue();
+}
+
+function playNextInQueue() {
+  if (speechPlaying || speechQueue.length === 0) return;
+  const next = speechQueue.shift()!;
+  speechPlaying = true;
   try {
-    const audio = new Audio(`/api/tts?text=${encodeURIComponent(normalized)}`);
+    const audio = new Audio(`/api/tts?text=${encodeURIComponent(next)}`);
     audio.volume = 1.0;
-    audio.play().catch(() => {
-      // Autoplay engellenirse fallback Web Speech (sistem Türkçe sesi varsa)
-      if ('speechSynthesis' in window) {
-        const voices = window.speechSynthesis.getVoices();
-        const trVoice = voices.find(v => v.lang.toLowerCase().startsWith('tr'));
-        if (trVoice) {
-          const utt = new SpeechSynthesisUtterance(normalized);
-          utt.lang = 'tr-TR';
-          utt.voice = trVoice;
-          window.speechSynthesis.speak(utt);
-        }
-      }
+    audio.playbackRate = 1.25; // biraz daha hızlı konuşma
+    audio.addEventListener('ended', () => {
+      speechPlaying = false;
+      playNextInQueue();
     });
-  } catch {}
+    audio.addEventListener('error', () => {
+      speechPlaying = false;
+      playNextInQueue();
+    });
+    audio.play().catch(() => {
+      // Autoplay engeli — sıradaki bekler, kullanıcı tıklayınca zincir tetiklenir
+      speechPlaying = false;
+      playNextInQueue();
+    });
+  } catch {
+    speechPlaying = false;
+    playNextInQueue();
+  }
 }
 
 function playBeep(tip: 'giris' | 'cikis' | 'uyari' | 'kritik' | 'personel_giris' | 'personel_cikis') {

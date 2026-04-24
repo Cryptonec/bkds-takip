@@ -78,7 +78,7 @@ export default function CanliPage() {
     yeniBildirimler, dismissBildirim,
     yeniGirisler, yeniCikislar,
     yeniPersonelGiris, yeniPersonelCikis,
-  } = useLiveAttendance(undefined, 2000);
+  } = useLiveAttendance(undefined, 1000);
 
   useEffect(() => {
     const v = localStorage.getItem(COLORBLIND_KEY);
