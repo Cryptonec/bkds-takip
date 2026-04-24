@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { UserCheck, LogOut, Volume2, VolumeX, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 interface Kayit {
@@ -292,8 +292,16 @@ export default function EkranPage() {
   const { girisler, cikislar, yeniIds, sonGuncelleme } = useBildirimEkrani(sesAcik);
 
   // Normal modda ilk 5 kayıt; tam ekranda bütün kayıtlar
-  const listeGiris = isFullscreen ? girisler : girisler.slice(0, MAX_NORMAL);
-  const listeCikis = isFullscreen ? cikislar : cikislar.slice(0, MAX_NORMAL);
+  // useMemo ile: girisler/isFullscreen değişmedikçe aynı array referansı döner
+  // -> Sutun'a (React.memo) giden prop ref aynı -> re-render yok
+  const listeGiris = useMemo(
+    () => isFullscreen ? girisler : girisler.slice(0, MAX_NORMAL),
+    [girisler, isFullscreen],
+  );
+  const listeCikis = useMemo(
+    () => isFullscreen ? cikislar : cikislar.slice(0, MAX_NORMAL),
+    [cikislar, isFullscreen],
+  );
 
   return (
     <div className="h-screen bg-gray-950 text-white flex flex-col select-none overflow-hidden">
@@ -391,7 +399,7 @@ export default function EkranPage() {
   );
 }
 
-function Sutun({
+const Sutun = memo(function Sutun({
   tip, baslik, altBaslik, kayitlar, toplamKayit, isFullscreen, yeniIds,
 }: {
   tip: 'giris' | 'cikis';
@@ -444,7 +452,7 @@ function Sutun({
       </div>
     </div>
   );
-}
+});
 
 // Pozisyon-bazlı görsel hiyerarşi: en üstteki kart en vurgulu, aşağıdakiler soluklaşır.
 // Giriş/çıkış aynı index için aynı boyutu kullanır — iki sütun simetrik görünür.
@@ -486,7 +494,7 @@ const SEVIYE = [
     fsMinH: 'min-h-[3rem]' },
 ];
 
-function BildirimsalKart({ kayit, index, isFullscreen, yeni }: {
+const BildirimsalKart = memo(function BildirimsalKart({ kayit, index, isFullscreen, yeni }: {
   kayit: Kayit; index: number; isFullscreen: boolean; yeni: boolean;
 }) {
   const isGiris = kayit.tip === 'giris';
@@ -513,7 +521,7 @@ function BildirimsalKart({ kayit, index, isFullscreen, yeni }: {
       <p className={`font-bold tabular-nums shrink-0 ${boyut.saat} ${s.saat}`}>{kayit.saat}</p>
     </div>
   );
-}
+});
 
 /** Saat + tarih gösterimi ayrı component — her saniye tick olur ama parent
  * EkranPage'i re-render etmez, böylece Sutun/Kart'lar etkilenmez. */
