@@ -40,29 +40,20 @@ function normalizeRecord(r: any): BkdsApiRecord | null {
   }
   const individualType = Number.isFinite(typeRaw) ? Number(typeRaw) : null;
 
-  if (!fullName) return null;
+  if (!fullName || !firstEntry) return null; // zorunlu alanlar yoksa at
 
-  // En az bir geçerli timestamp olmalı (firstEntry VEYA lastExit)
-  const entryDate = firstEntry ? new Date(firstEntry) : null;
-  const validEntry = entryDate && !isNaN(entryDate.getTime()) ? entryDate : null;
+  const entryDate = new Date(firstEntry);
+  if (isNaN(entryDate.getTime())) return null;
 
   const exitDate = lastExit ? new Date(lastExit) : null;
   const validExit = exitDate && !isNaN(exitDate.getTime()) ? exitDate : null;
-
-  if (!validEntry && !validExit) return null; // ikisi de yoksa drop
-
-  // BRY bazen girişi kaçırır, sadece çıkış kaydeder. bkdsRaw.girisZamani
-  // required olduğu için fallback: çıkış varsa onu giriş olarak kullan. Bu,
-  // tumOgrenciGirisler aggregate'inde ilkGiris = sonCikis yapar — UI çıkışı
-  // mutlaka gösterir (giriş alanı ayrıca doğru değilse de).
-  const effectiveEntry = validEntry ?? validExit!;
 
   return {
     individual_uuid: String(uuid),
     individual_full_name: String(fullName),
     individual_identity_number: idNumber ? String(idNumber) : '',
     individual_type: individualType ?? 1,
-    first_entry: effectiveEntry.toISOString(),
+    first_entry: entryDate.toISOString(),
     last_exit: validExit ? validExit.toISOString() : null,
   };
 }
@@ -237,8 +228,8 @@ export class BkdsProviderService {
     const dateOnly = new Date(tarih);
     dateOnly.setHours(0, 0, 0, 0);
 
-    // Ham verileri atomik yaz — delete+create tek transaction içinde, böylece
-    // client polling hiçbir zaman boş liste görmez (flickering önlenir).
+    // Ham verileri kaydet — zorunlu alanları doğrula, geçersiz kayıtları at
+    await prisma.bkdsRaw.deleteMany({ where: { organizationId: orgId, tarih: dateOnly } });
     const rawRows = records
       .map(r => {
         const giris = new Date(r.first_entry);
@@ -260,11 +251,9 @@ export class BkdsProviderService {
     if (rawRows.length !== records.length) {
       console.warn(`[BKDS][${orgId}] ${records.length - rawRows.length} kayıt geçersiz alan nedeniyle atlandı`);
     }
-
-    await prisma.$transaction([
-      prisma.bkdsRaw.deleteMany({ where: { organizationId: orgId, tarih: dateOnly } }),
-      ...(rawRows.length > 0 ? [prisma.bkdsRaw.createMany({ data: rawRows })] : []),
-    ]);
+    if (rawRows.length > 0) {
+      await prisma.bkdsRaw.createMany({ data: rawRows });
+    }
 
     const bireyRecords    = records.filter(r => r.individual_type === 1);
     const personelRecords = records.filter(r => r.individual_type === 2);
@@ -324,19 +313,7 @@ export class BkdsProviderService {
       personelMap.set(r.individual_full_name, ex);
     }
 
-    // 1. Tüm personelLog insert verilerini ve staffSession update'lerini topla
-    type PersonelLogInsert = {
-      organizationId: string;
-      tarih: Date;
-      maskedAd: string;
-      ilkGiris: Date;
-      sonCikis: Date | null;
-      staffId: string | null;
-      eslesmeDurumu: string;
-      tahminEdilenAd: string | null;
-    };
-    const personelLogsToInsert: PersonelLogInsert[] = [];
-    const staffSessionUpdates: Array<{ staffId: string; ilkGiris: Date; sonCikis: Date | null }> = [];
+    await prisma.bkdsPersonelLog.deleteMany({ where: { organizationId: orgId, tarih: dateOnly } });
 
     for (const [maskedName, recs] of personelMap.entries()) {
       const ilkGiris = new Date(Math.min(...recs.map(r => new Date(r.first_entry).getTime())));
@@ -359,45 +336,47 @@ export class BkdsProviderService {
           matchedStaff = prefixMatches[0].staff;
           eslesmeTipi = 'prefix_eslesme';
           tahminEdilenAd = prefixMatches[0].staff.adSoyad;
+          console.log(`[BKDS][${orgId}] Soyisim değişikliği tahmini: "${maskedName}" → "${matchedStaff.adSoyad}"`);
         } else if (prefixMatches.length > 1) {
           matchedStaff = prefixMatches[0].staff;
           eslesmeTipi = 'prefix_eslesme';
           tahminEdilenAd = prefixMatches.map(x => x.staff.adSoyad).join(' / ');
+          console.log(`[BKDS][${orgId}] Çoklu prefix eşleşme: "${maskedName}" → ${tahminEdilenAd}`);
         } else {
           eslesmeTipi = 'eslesme_yok';
+          console.log(`[BKDS][${orgId}] Eşleşme yok: "${maskedName}"`);
         }
       }
 
-      personelLogsToInsert.push({
-        organizationId: orgId,
-        tarih: dateOnly,
-        maskedAd: maskedName,
-        ilkGiris,
-        sonCikis,
-        staffId: matchedStaff?.id ?? null,
-        eslesmeDurumu: eslesmeTipi,
-        tahminEdilenAd: tahminEdilenAd ?? null,
+      await prisma.bkdsPersonelLog.create({
+        data: {
+          organizationId: orgId,
+          tarih: dateOnly,
+          maskedAd: maskedName,
+          ilkGiris,
+          sonCikis,
+          staffId: matchedStaff?.id ?? null,
+          eslesmeDurumu: eslesmeTipi,
+          tahminEdilenAd: tahminEdilenAd ?? null,
+        },
       });
 
       if (matchedStaff) {
-        staffSessionUpdates.push({ staffId: matchedStaff.id, ilkGiris, sonCikis });
+        const sessions = await prisma.staffSession.findMany({
+          where: { organizationId: orgId, staffId: matchedStaff.id, tarih: dateOnly },
+        });
+
+        for (const session of sessions) {
+          await prisma.staffSession.update({
+            where: { id: session.id },
+            data: { basladiMi: true, baslamaZamani: ilkGiris, sonCikisZamani: sonCikis },
+          });
+        }
+
+        if (sessions.length === 0) {
+          console.log(`[BKDS][${orgId}] ${matchedStaff.adSoyad} bugün dersi yok ama kuruma gelmiş`);
+        }
       }
-    }
-
-    // 2. Atomik delete + createMany — polling hiçbir zaman boş görmez
-    await prisma.$transaction([
-      prisma.bkdsPersonelLog.deleteMany({ where: { organizationId: orgId, tarih: dateOnly } }),
-      ...(personelLogsToInsert.length > 0
-        ? [prisma.bkdsPersonelLog.createMany({ data: personelLogsToInsert })]
-        : []),
-    ]);
-
-    // 3. StaffSession güncellemeleri — transaction dışında (UI'a etkisiz, yavaş olabilir)
-    for (const upd of staffSessionUpdates) {
-      await prisma.staffSession.updateMany({
-        where: { organizationId: orgId, staffId: upd.staffId, tarih: dateOnly },
-        data: { basladiMi: true, baslamaZamani: upd.ilkGiris, sonCikisZamani: upd.sonCikis },
-      });
     }
   }
 }
