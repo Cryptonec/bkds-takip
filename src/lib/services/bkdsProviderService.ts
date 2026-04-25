@@ -285,7 +285,9 @@ export class BkdsProviderService {
           .map(s => ({ s, r: matchMaskedNameFuzzy(maskedName, s.adSoyad) }))
           .filter(x => x.r.type === 'prefix_eslesme')
           .sort((a, b) => b.r.score - a.r.score);
-        if (fuzzy.length === 1) student = fuzzy[0].s;
+        // Tek sonuç varsa kesin eşleştir; çok sonuç varsa en yüksek skorlu olanı kullan
+        // (eskiden çok sonuç → atla idi, kullanıcı eşleşmiyor diye şikayet ediyordu)
+        if (fuzzy.length >= 1) student = fuzzy[0].s;
       }
       if (student) {
         ogrEslesen++;
