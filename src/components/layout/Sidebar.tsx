@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import {
-  LayoutDashboard, Monitor, Users,
+  LayoutDashboard, Monitor, Users, GraduationCap,
   Upload, FileBarChart, Settings, LogOut, Activity, Tv2,
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
@@ -14,6 +14,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/canli', label: 'Canlı Takip', icon: Monitor },
   { href: '/ogrenciler', label: 'Öğrenciler', icon: Users },
+  { href: '/personel', label: 'Personel', icon: GraduationCap },
   { href: '/import', label: 'Lila İçe Aktar', icon: Upload },
   { href: '/ekran', label: 'Bildirim Ekranı', icon: Tv2 },
   { href: '/raporlar', label: 'Raporlar', icon: FileBarChart },
