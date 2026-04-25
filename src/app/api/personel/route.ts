@@ -2,8 +2,35 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions, getOrgId } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { normalizeName } from '@/lib/utils/normalize';
+import { normalizeName, matchMaskedName } from '@/lib/utils/normalize';
 import { z } from 'zod';
+
+/**
+ * Yeni staff oluşturulduğunda bugünün eşleşmemiş bkdsPersonelLog
+ * kayıtlarını yeniden tarar — masked isim bu staff'a uyuyorsa staffId set
+ * eder. Böylece kullanıcı /personel'den maskeli giriş ekledikten sonra
+ * canlı sayfasında hemen gerçek isim görünür (BKDS yeniden çekmeden).
+ */
+async function relinkTodayUnmatched(orgId: string, staffId: string, adSoyad: string) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const unmatched = await prisma.bkdsPersonelLog.findMany({
+    where: { organizationId: orgId, tarih: today, staffId: null },
+  });
+  const matchingIds: string[] = [];
+  for (const log of unmatched) {
+    if (matchMaskedName(log.maskedAd, adSoyad)) {
+      matchingIds.push(log.id);
+    }
+  }
+  if (matchingIds.length > 0) {
+    await prisma.bkdsPersonelLog.updateMany({
+      where: { id: { in: matchingIds } },
+      data: { staffId, eslesmeDurumu: 'tam_eslesme' },
+    });
+  }
+  return matchingIds.length;
+}
 
 const staffSchema = z.object({
   adSoyad: z.string().min(2),
@@ -54,6 +81,7 @@ export async function POST(req: NextRequest) {
       where: { id: existing.id },
       data: { aktif: true, adSoyad: parsed.data.adSoyad },
     });
+    await relinkTodayUnmatched(orgId, reactivated.id, reactivated.adSoyad);
     return NextResponse.json(reactivated, { status: 200 });
   }
 
@@ -64,6 +92,8 @@ export async function POST(req: NextRequest) {
       normalizedName: normalized,
     },
   });
+
+  await relinkTodayUnmatched(orgId, member.id, member.adSoyad);
 
   return NextResponse.json(member, { status: 201 });
 }

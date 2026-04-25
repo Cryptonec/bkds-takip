@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Search, Plus, X, Pencil, Trash2, Check, Info } from 'lucide-react';
+import { Search, Plus, X, Pencil, Trash2, Check, Info, AlertTriangle, UserPlus, Clock } from 'lucide-react';
 
 interface Staff {
   id: string;
@@ -9,8 +9,21 @@ interface Staff {
   normalizedName: string;
 }
 
+interface UnmatchedEntry {
+  maskedAd: string;
+  ilkGiris: string;
+  sonCikis: string | null;
+  tahminEdilenAd: string | null;
+}
+
+function formatTime(d: string | null): string {
+  if (!d) return '—';
+  return new Date(d).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+}
+
 export default function PersonelPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
+  const [unmatched, setUnmatched] = useState<UnmatchedEntry[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -20,20 +33,61 @@ export default function PersonelPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [unmatchedInput, setUnmatchedInput] = useState<Record<string, string>>({});
+  const [savingMasked, setSavingMasked] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
     const params = new URLSearchParams();
     if (search) params.set('q', search);
     params.set('aktif', 'true');
-    const res = await fetch(`/api/personel?${params}`);
-    if (!res.ok) { setLoading(false); return; }
-    const data = await res.json();
-    setStaff(Array.isArray(data) ? data : []);
+    const [resStaff, resUnmatched] = await Promise.all([
+      fetch(`/api/personel?${params}`),
+      fetch('/api/personel/unmatched'),
+    ]);
+    if (resStaff.ok) {
+      const data = await resStaff.json();
+      setStaff(Array.isArray(data) ? data : []);
+    }
+    if (resUnmatched.ok) {
+      const data = await resUnmatched.json();
+      setUnmatched(Array.isArray(data) ? data : []);
+    }
     setLoading(false);
   }
 
   useEffect(() => { load(); }, [search]);
+
+  async function handleNameMasked(maskedAd: string) {
+    const realName = (unmatchedInput[maskedAd] ?? '').trim();
+    if (!realName || realName.length < 2) return;
+    setSavingMasked(maskedAd);
+    setError('');
+    try {
+      const res = await fetch('/api/personel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adSoyad: realName }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error ?? 'Eklenemedi');
+      }
+      setUnmatchedInput(prev => {
+        const next = { ...prev };
+        delete next[maskedAd];
+        return next;
+      });
+      // Optimistik: BKDS yeniden işlemeden bu masked log staffId=null kalır,
+      // bu yüzden listeden hemen çıkar
+      setUnmatched(prev => prev.filter(x => x.maskedAd !== maskedAd));
+      load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSavingMasked(null);
+    }
+  }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -123,6 +177,60 @@ export default function PersonelPage() {
           </p>
         </div>
       </div>
+
+      {/* Tanımsız BKDS girişleri */}
+      {unmatched.length > 0 && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-5">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600" />
+            <h2 className="text-sm font-semibold text-amber-900">
+              Tanımsız BKDS Girişleri ({unmatched.length})
+            </h2>
+          </div>
+          <p className="text-xs text-amber-800 mb-3">
+            Bugün BKDS bu maskeli isimleri okudu ama personel listesinde tanımlı değiller. Her biri
+            için <strong>gerçek isim</strong> gir → otomatik personel kaydı açılır, sonraki BKDS
+            okumasında eşleşir.
+          </p>
+          <div className="space-y-2">
+            {unmatched.map((u) => (
+              <div key={u.maskedAd} className="bg-white border border-amber-200 rounded-lg p-3 flex items-center gap-3 flex-wrap">
+                <span className="font-mono font-bold text-amber-700 tabular-nums text-sm">
+                  {u.maskedAd}
+                </span>
+                <span className="inline-flex items-center gap-1 text-xs text-gray-500 tabular-nums">
+                  <Clock className="w-3 h-3" /> {formatTime(u.ilkGiris)}
+                  {u.sonCikis && ` → ${formatTime(u.sonCikis)}`}
+                </span>
+                {u.tahminEdilenAd && (
+                  <span className="text-xs text-orange-700 italic">
+                    Tahmin: {u.tahminEdilenAd}
+                  </span>
+                )}
+                <div className="flex-1 min-w-[200px] flex gap-2">
+                  <input
+                    value={unmatchedInput[u.maskedAd] ?? ''}
+                    onChange={(e) => setUnmatchedInput(prev => ({ ...prev, [u.maskedAd]: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleNameMasked(u.maskedAd);
+                    }}
+                    placeholder="Gerçek ad soyad..."
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <button
+                    onClick={() => handleNameMasked(u.maskedAd)}
+                    disabled={savingMasked === u.maskedAd || !(unmatchedInput[u.maskedAd] ?? '').trim()}
+                    className="flex items-center gap-1 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    {savingMasked === u.maskedAd ? 'Ekleniyor...' : 'Ekle'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={handleAdd} className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
