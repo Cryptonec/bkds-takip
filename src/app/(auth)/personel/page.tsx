@@ -1,21 +1,12 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, UserCheck, UserX, X, Upload, FileSpreadsheet, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, Plus, X, Pencil, Trash2, Check, Info } from 'lucide-react';
 
 interface Staff {
   id: string;
   adSoyad: string;
   aktif: boolean;
   normalizedName: string;
-}
-
-interface ImportResult {
-  eklenen: number;
-  atlanan: number;
-  hatali: number;
-  toplam: number;
-  formatTipi?: string;
-  errors: Array<{ row: number; reason: string }>;
 }
 
 export default function PersonelPage() {
@@ -26,14 +17,15 @@ export default function PersonelPage() {
   const [adSoyad, setAdSoyad] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [uploading, setUploading] = useState(false);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
     const params = new URLSearchParams();
     if (search) params.set('q', search);
+    params.set('aktif', 'true');
     const res = await fetch(`/api/personel?${params}`);
     if (!res.ok) { setLoading(false); return; }
     const data = await res.json();
@@ -56,7 +48,7 @@ export default function PersonelPage() {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(JSON.stringify(err));
+        throw new Error(err.error ?? JSON.stringify(err));
       }
       setAdSoyad('');
       setShowForm(false);
@@ -68,123 +60,68 @@ export default function PersonelPage() {
     }
   }
 
-  async function handleImport(file: File) {
-    if (!file) return;
-    setUploading(true);
-    setImportResult(null);
-    const fd = new FormData();
-    fd.append('file', file);
+  async function handleEdit(id: string) {
+    const trimmed = editValue.trim();
+    if (!trimmed) return;
     try {
-      const res = await fetch('/api/personel/import', { method: 'POST', body: fd });
-      const data = await res.json();
-      if (data.errors || data.eklenen !== undefined) {
-        setImportResult(data);
-      } else {
-        setImportResult({
-          eklenen: 0,
-          atlanan: 0,
-          hatali: 1,
-          toplam: 0,
-          errors: [{ row: 0, reason: data.error ?? 'Yükleme başarısız' }],
-        });
+      const res = await fetch(`/api/personel/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adSoyad: trimmed }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error ?? 'Güncellenemedi');
       }
+      setEditingId(null);
+      setEditValue('');
       load();
     } catch (err: any) {
-      setImportResult({ eklenen: 0, atlanan: 0, hatali: 1, toplam: 0, errors: [{ row: 0, reason: err.message }] });
-    } finally {
-      setUploading(false);
+      setError(err.message);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      const res = await fetch(`/api/personel/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error ?? 'Silinemedi');
+      }
+      setConfirmDeleteId(null);
+      load();
+    } catch (err: any) {
+      setError(err.message);
     }
   }
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Personel</h1>
           <p className="text-gray-500 text-sm mt-1">{staff.length} öğretmen / uzman</p>
         </div>
-        <div className="flex items-center gap-2">
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleImport(f);
-              e.target.value = '';
-            }}
-          />
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-          >
-            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            {uploading ? 'Yükleniyor...' : 'Excel Yükle'}
-          </button>
-          <button
-            onClick={() => { setShowForm(!showForm); setError(''); }}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-          >
-            {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-            {showForm ? 'İptal' : 'Personel Ekle'}
-          </button>
-        </div>
+        <button
+          onClick={() => { setShowForm(!showForm); setError(''); }}
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+        >
+          {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          {showForm ? 'İptal' : 'Personel Ekle'}
+        </button>
       </div>
 
-      {/* Import sonucu */}
-      {importResult && (
-        <div className={`border rounded-xl p-4 mb-5 ${
-          importResult.hatali === 0
-            ? 'bg-green-50 border-green-200'
-            : importResult.eklenen > 0
-              ? 'bg-yellow-50 border-yellow-200'
-              : 'bg-red-50 border-red-200'
-        }`}>
-          <div className="flex items-center gap-2 mb-2">
-            {importResult.hatali === 0 ? (
-              <CheckCircle className="w-5 h-5 text-green-600" />
-            ) : (
-              <XCircle className="w-5 h-5 text-red-500" />
-            )}
-            <p className="font-semibold text-sm text-gray-900">
-              {importResult.eklenen} eklendi
-              {importResult.atlanan > 0 && `, ${importResult.atlanan} zaten vardı`}
-              {importResult.hatali > 0 && `, ${importResult.hatali} hatalı`}
-            </p>
-            <button onClick={() => setImportResult(null)} className="ml-auto text-gray-400 hover:text-gray-600">
-              <XCircle className="w-4 h-4" />
-            </button>
-          </div>
-          {importResult.errors.length > 0 && (
-            <div className="space-y-0.5 mt-2">
-              {importResult.errors.slice(0, 5).map((e, i) => (
-                <p key={i} className="text-xs text-red-700">Satır {e.row}: {e.reason}</p>
-              ))}
-              {importResult.errors.length > 5 && (
-                <p className="text-xs text-gray-500">... ve {importResult.errors.length - 5} hata daha</p>
-              )}
-            </div>
-          )}
+      {/* Bilgi paneli */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-5 text-xs text-blue-800 flex items-start gap-2">
+        <Info className="w-4 h-4 shrink-0 mt-0.5" />
+        <div>
+          <p className="font-medium mb-0.5">Personel listesi otomatik düzenlenir</p>
+          <p className="text-blue-700">
+            Yoklama Excel'i içe aktarıldığında öğretmenler otomatik eklenir. <strong>Dersi olmayan
+            personeli</strong> (yöneticiler, rehber, yardımcılar) buradan manuel ekleyerek BKDS
+            girişlerinin sisteme yansımasını sağlayabilirsin.
+          </p>
         </div>
-      )}
-
-      {/* Format bilgisi */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-5 text-xs text-blue-800">
-        <p className="flex items-center gap-1.5 font-medium mb-1">
-          <FileSpreadsheet className="w-3.5 h-3.5" /> Hangi dosyayı yükleyebilirsin?
-        </p>
-        <ul className="list-disc list-inside space-y-0.5">
-          <li><strong>BRY personel listesi Excel</strong> — ADI / SOYADI kolonları otomatik tanınır</li>
-          <li><strong>Lila yoklama .xls</strong> — yoklamadan personel/öğretmen isimleri çekilir</li>
-          <li><strong>Standart Excel/CSV</strong> — başlık satırı: <code className="bg-blue-100 px-1 rounded">Ad Soyad</code></li>
-          <li><strong>Tek sütun isim listesi</strong> — sadece adların alt alta olduğu .xlsx</li>
-        </ul>
-        <p className="mt-1 text-blue-600">
-          Mevcut personel varsa atlanır, duplicate eklenmez. <strong>Dersi olmayan personeli</strong> de
-          buradan ekleyerek BKDS girişlerinde görünür yapabilirsin.
-        </p>
       </div>
 
       {showForm && (
@@ -238,25 +175,84 @@ export default function PersonelPage() {
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="text-left px-4 py-3 font-semibold text-gray-600">Ad Soyad</th>
-                <th className="text-left px-4 py-3 font-semibold text-gray-600">Durum</th>
+                <th className="text-right px-4 py-3 font-semibold text-gray-600 w-32">İşlem</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {staff.map((s) => (
                 <tr key={s.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-gray-900">{s.adSoyad}</p>
-                    <p className="text-xs text-gray-400 mt-0.5 font-mono">{s.normalizedName}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    {s.aktif ? (
-                      <span className="inline-flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded-full px-2.5 py-0.5 text-xs font-medium">
-                        <UserCheck className="w-3 h-3" /> Aktif
-                      </span>
+                    {editingId === s.id ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          autoFocus
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleEdit(s.id);
+                            if (e.key === 'Escape') { setEditingId(null); setEditValue(''); }
+                          }}
+                          className="border border-blue-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
+                        />
+                      </div>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-gray-500 bg-gray-50 border border-gray-200 rounded-full px-2.5 py-0.5 text-xs font-medium">
-                        <UserX className="w-3 h-3" /> Pasif
-                      </span>
+                      <>
+                        <p className="font-medium text-gray-900">{s.adSoyad}</p>
+                        <p className="text-xs text-gray-400 mt-0.5 font-mono">{s.normalizedName}</p>
+                      </>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {editingId === s.id ? (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          onClick={() => handleEdit(s.id)}
+                          className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                          title="Kaydet"
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => { setEditingId(null); setEditValue(''); }}
+                          className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors"
+                          title="İptal"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : confirmDeleteId === s.id ? (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          onClick={() => handleDelete(s.id)}
+                          className="text-xs font-bold bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded-lg transition-colors"
+                          title="Silmeyi onayla"
+                        >
+                          Sil
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded-lg transition-colors"
+                        >
+                          İptal
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          onClick={() => { setEditingId(s.id); setEditValue(s.adSoyad); setError(''); }}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Düzenle"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => { setConfirmDeleteId(s.id); setError(''); }}
+                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Sil"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -265,6 +261,10 @@ export default function PersonelPage() {
           </table>
         )}
       </div>
+
+      {error && !showForm && (
+        <p className="text-red-600 text-xs mt-3 text-center">{error}</p>
+      )}
     </div>
   );
 }

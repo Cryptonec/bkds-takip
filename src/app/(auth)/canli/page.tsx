@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useLiveAttendance } from '@/lib/hooks/useLiveAttendance';
 import { OgrenciPaneli, StatusSummaryBar } from '@/components/canli/OgrenciPaneli';
 import { PersonelPaneli } from '@/components/canli/PersonelPaneli';
+import { PersonelMiniPanel } from '@/components/canli/PersonelMiniPanel';
 import { BildirimPanel } from '@/components/canli/BildirimPanel';
 import { ColorLegend } from '@/components/canli/ColorLegend';
 import { TumBildirimler } from '@/components/canli/TumBildirimler';
@@ -356,6 +357,10 @@ export default function CanliPage() {
         )}
         {data && activeTab === 'ogrenci' && (
           <>
+            <PersonelMiniPanel
+              rows={data.personelRows}
+              tumPersonelGirisler={data.tumPersonelGirisler ?? []}
+            />
             <StatusSummaryBar counts={data.statusCounts} activeFilter={ogrenciFilter} onFilter={setOgrenciFilter} />
             <OgrenciPaneli
               rows={data.ogrenciRows}

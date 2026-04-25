@@ -40,11 +40,28 @@ export async function POST(req: NextRequest) {
   const parsed = staffSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
+  const normalized = normalizeName(parsed.data.adSoyad);
+
+  // Aynı isimde pasif kayıt varsa onu reaktif et — yeni duplicate yaratma
+  const existing = await prisma.staff.findFirst({
+    where: { organizationId: orgId, normalizedName: normalized },
+  });
+  if (existing) {
+    if (existing.aktif) {
+      return NextResponse.json({ error: 'Aynı isimde personel zaten kayıtlı' }, { status: 409 });
+    }
+    const reactivated = await prisma.staff.update({
+      where: { id: existing.id },
+      data: { aktif: true, adSoyad: parsed.data.adSoyad },
+    });
+    return NextResponse.json(reactivated, { status: 200 });
+  }
+
   const member = await prisma.staff.create({
     data: {
       ...parsed.data,
       organizationId: orgId,
-      normalizedName: normalizeName(parsed.data.adSoyad),
+      normalizedName: normalized,
     },
   });
 
