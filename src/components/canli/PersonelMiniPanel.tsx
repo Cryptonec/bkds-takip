@@ -1,9 +1,10 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import Link from 'next/link';
 import { formatTime } from '@/lib/utils';
 import type { PersonelRow, PersonelGiris } from '@/lib/hooks/useLiveAttendance';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronUp, UserCheck, LogOut, Users } from 'lucide-react';
+import { ChevronDown, ChevronUp, UserCheck, LogOut, Users, AlertTriangle } from 'lucide-react';
 
 interface Props {
   rows: PersonelRow[];
@@ -67,30 +68,51 @@ function birlestir(rows: PersonelRow[], tumPersonel: PersonelGiris[]): MiniPerso
   });
 }
 
+const PANEL_OPEN_KEY = 'canli-personel-mini-open';
+
 /**
  * Öğrenci takibi sayfasında üstte gösterilen kompakt personel
  * giriş/çıkış paneli. Tek bakışta öğretmen ve diğer personelin durumunu
  * gösterir, detay için /canli > Personel sekmesi var.
+ *
+ * Maskeli (BKDS DB'de eşleşmemiş) personel listede gösterilmez —
+ * sadece sayaç olarak görünür ve /personel sayfasından eklemeleri istenir.
+ * Kullanıcı tercih ettiği aç/kapa durumu localStorage'da tutulur.
  */
 export function PersonelMiniPanel({ rows, tumPersonelGirisler }: Props) {
-  const [open, setOpen] = useState(true);
-  const personeller = useMemo(() => birlestir(rows, tumPersonelGirisler), [rows, tumPersonelGirisler]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const v = typeof window !== 'undefined' ? localStorage.getItem(PANEL_OPEN_KEY) : null;
+    if (v === '1') setOpen(true);
+  }, []);
+  function toggle() {
+    setOpen(v => {
+      const next = !v;
+      if (typeof window !== 'undefined') localStorage.setItem(PANEL_OPEN_KEY, next ? '1' : '0');
+      return next;
+    });
+  }
+
+  const tumu = useMemo(() => birlestir(rows, tumPersonelGirisler), [rows, tumPersonelGirisler]);
+  // Maskeli personeli listeden ayikla — kullanici /personel sayfasindan eklemeli
+  const personeller = useMemo(() => tumu.filter(p => !p.ogretmenAdi.includes('*')), [tumu]);
+  const maskeliSayisi = tumu.length - personeller.length;
 
   const kurumda = personeller.filter(p => p.ilkGiris && !p.sonCikis).length;
   const cikti = personeller.filter(p => p.ilkGiris && p.sonCikis).length;
   const gelmemis = personeller.filter(p => !p.ilkGiris).length;
 
-  if (personeller.length === 0) return null;
+  if (tumu.length === 0) return null;
 
   return (
     <div className="border-b border-gray-200 bg-white">
       <button
-        onClick={() => setOpen(v => !v)}
+        onClick={toggle}
         className="w-full flex items-center gap-3 px-5 py-2.5 text-sm hover:bg-gray-50 transition-colors"
       >
         <Users className="w-4 h-4 text-indigo-600 shrink-0" />
         <span className="font-semibold text-gray-800">Personel Giriş / Çıkış</span>
-        <div className="flex items-center gap-3 text-xs">
+        <div className="flex items-center gap-3 text-xs flex-wrap">
           {kurumda > 0 && (
             <span className="flex items-center gap-1 text-green-700 font-semibold">
               <span className="w-2 h-2 rounded-full bg-green-500" /> {kurumda} kurumda
@@ -106,6 +128,11 @@ export function PersonelMiniPanel({ rows, tumPersonelGirisler }: Props) {
               <span className="w-2 h-2 rounded-full bg-gray-300" /> {gelmemis} bekleniyor
             </span>
           )}
+          {maskeliSayisi > 0 && (
+            <span className="flex items-center gap-1 text-amber-700 font-semibold">
+              <AlertTriangle className="w-3 h-3" /> {maskeliSayisi} tanımsız
+            </span>
+          )}
         </div>
         <span className="ml-auto text-gray-400">
           {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -113,12 +140,29 @@ export function PersonelMiniPanel({ rows, tumPersonelGirisler }: Props) {
       </button>
 
       {open && (
-        <div className="px-3 pb-3 pt-1 max-h-44 overflow-y-auto">
-          <div className="grid gap-1.5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-            {personeller.map(p => (
-              <PersonelMiniKart key={p.staffId} p={p} />
-            ))}
-          </div>
+        <div className="px-3 pb-3 pt-1 max-h-48 overflow-y-auto">
+          {personeller.length > 0 && (
+            <div className="grid gap-1.5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+              {personeller.map(p => (
+                <PersonelMiniKart key={p.staffId} p={p} />
+              ))}
+            </div>
+          )}
+          {maskeliSayisi > 0 && (
+            <div className="mt-2 flex items-center gap-2 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span className="flex-1">
+                <strong>{maskeliSayisi} kişi</strong> BKDS'de okundu ama personel listesinde
+                tanımlı değil. Eklemek için
+              </span>
+              <Link
+                href="/personel"
+                className="text-amber-900 hover:text-amber-700 font-bold underline whitespace-nowrap"
+              >
+                /personel
+              </Link>
+            </div>
+          )}
         </div>
       )}
     </div>
