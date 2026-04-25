@@ -234,12 +234,13 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000, opts?: { si
           });
         }
       }
-      // tumPersonelGirisler'den — sadece MASKELENMEMİŞ (Lila ile eşleşen)
-      // personel dahil edilir. Maskeli isimler için bildirim tetiklenmez.
+      // tumPersonelGirisler'den — TÜM personel (maskeli dahil) ton + toast
+      // bildirimi alir. TTS speak() icindeki '*' filtresi maskeli isimleri
+      // sessizce atliyor; ama beep ve toast her durumda calisir.
       for (const p of (json.tumPersonelGirisler ?? [])) {
         const key = p.staffId ?? p.ogretmenAdi;
         if (tumGirisMap.has(key)) continue;
-        if (!p.ogretmenAdi || p.ogretmenAdi.includes('*')) continue; // maskeli — atla
+        if (!p.ogretmenAdi) continue;
         tumGirisMap.set(key, {
           ad: p.ogretmenAdi,
           cikisVar: !!p.sonCikis,

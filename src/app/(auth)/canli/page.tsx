@@ -228,7 +228,9 @@ export default function CanliPage() {
               <GraduationCap className="w-5 h-5 shrink-0" />
               <div>
                 <p className="font-bold">{r.ad}</p>
-                <p className="text-xs text-blue-100">Derse Başladı · {r.derslik ?? ''}</p>
+                <p className="text-xs text-blue-100">
+                  Personel Girişi{r.derslik ? ` · ${r.derslik}` : ''}
+                </p>
               </div>
             </div>
           ))}
@@ -244,7 +246,9 @@ export default function CanliPage() {
               <LogOut className="w-5 h-5 shrink-0" />
               <div>
                 <p className="font-bold">{r.ad}</p>
-                <p className="text-xs text-indigo-100">Ders Tamamlandı · {r.derslik ?? ''}</p>
+                <p className="text-xs text-indigo-100">
+                  Personel Çıkışı{r.derslik ? ` · ${r.derslik}` : ''}
+                </p>
               </div>
             </div>
           ))}
