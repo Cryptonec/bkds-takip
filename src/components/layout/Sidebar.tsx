@@ -1,7 +1,7 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import {
   LayoutDashboard, Monitor, Users, GraduationCap,
@@ -25,6 +25,7 @@ const SIDEBAR_KEY = 'sidebar-collapsed';
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { data: session } = useSession();
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -38,6 +39,16 @@ export function Sidebar() {
     if (mounted) localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0');
   }, [collapsed, mounted]);
 
+  // Dokunmatik ekranlarda Link onClick bazen 'sticky hover' yuzunden
+  // ikinci tikla cagriliyor. onPointerUp ile parmak kalkar kalkmaz
+  // navigasyonu tetikleyerek tek tikla gecisi garanti ediyoruz.
+  const handlePointerNav = useCallback((href: string) => (e: React.PointerEvent) => {
+    if (e.pointerType !== 'mouse' && pathname !== href) {
+      e.preventDefault();
+      router.push(href);
+    }
+  }, [router, pathname]);
+
   return (
     <>
       {/* Açık sidebar */}
@@ -48,7 +59,7 @@ export function Sidebar() {
         {/* Collapse butonu — sidebar kenarına yerleştirilmiş kalıcı görünür buton */}
         <button
           onClick={() => setCollapsed(v => !v)}
-          className="absolute -right-3 top-7 z-10 w-6 h-6 rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-lg border-2 border-slate-900 flex items-center justify-center transition-all hover:scale-110"
+          className="absolute -right-3 top-7 z-10 w-6 h-6 rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-lg border-2 border-slate-900 flex items-center justify-center transition-all hover:scale-110 touch-manipulation"
           title={collapsed ? 'Menüyü aç' : 'Menüyü daralt'}
           aria-pressed={collapsed}
         >
@@ -78,12 +89,13 @@ export function Sidebar() {
                 key={href}
                 href={href}
                 title={collapsed ? label : undefined}
+                onPointerUp={handlePointerNav(href)}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                  'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors touch-manipulation select-none',
                   collapsed && 'justify-center px-2',
                   active
                     ? 'bg-blue-600 text-white'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white active:bg-slate-700',
                 )}
               >
                 <Icon className="w-4 h-4 shrink-0" />
@@ -106,7 +118,7 @@ export function Sidebar() {
             onClick={() => signOut({ callbackUrl: '/giris' })}
             title={collapsed ? 'Çıkış Yap' : undefined}
             className={cn(
-              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800 hover:text-white w-full transition-colors',
+              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800 hover:text-white active:bg-slate-700 w-full transition-colors touch-manipulation',
               collapsed && 'justify-center px-2',
             )}
           >
