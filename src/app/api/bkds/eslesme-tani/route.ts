@@ -51,10 +51,12 @@ export async function GET(req: NextRequest) {
     if (fuzzyAll.length === 1) {
       return { durum: 'fuzzy_tek', eslesti: fuzzyAll[0].ad };
     }
+    // Birden çok aday — gerçek matcher en yüksek skorluyu seçiyor
     return {
-      durum: 'fuzzy_coklu_atlanir',
+      durum: 'fuzzy_coklu_secildi',
+      eslesti: fuzzyAll[0].ad,
       adaylar: fuzzyAll.map(x => x.ad),
-      not: 'Birden çok aday var, sistem hangisini seçeceğini bilemediği için eşleştirme yapılmadı',
+      not: `Birden çok aday var, en yüksek skorlu seçildi (skor: ${fuzzyAll[0].sonuc.score})`,
     };
   }
 
@@ -80,14 +82,14 @@ export async function GET(req: NextRequest) {
     ozet: {
       ogrenci: {
         toplam: ogrenci.length,
-        eslesti: ogrenci.filter(x => x.durum === 'tam_eslesme' || x.durum === 'fuzzy_tek').length,
-        coklu_aday: ogrenci.filter(x => x.durum === 'fuzzy_coklu_atlanir').length,
+        eslesti: ogrenci.filter(x => x.durum === 'tam_eslesme' || x.durum === 'fuzzy_tek' || x.durum === 'fuzzy_coklu_secildi').length,
+        coklu_aday: ogrenci.filter(x => x.durum === 'fuzzy_coklu_secildi').length,
         eslesmedi: ogrenci.filter(x => x.durum === 'eslesme_yok').length,
       },
       personel: {
         toplam: personel.length,
-        eslesti: personel.filter(x => x.durum === 'tam_eslesme' || x.durum === 'fuzzy_tek').length,
-        coklu_aday: personel.filter(x => x.durum === 'fuzzy_coklu_atlanir').length,
+        eslesti: personel.filter(x => x.durum === 'tam_eslesme' || x.durum === 'fuzzy_tek' || x.durum === 'fuzzy_coklu_secildi').length,
+        coklu_aday: personel.filter(x => x.durum === 'fuzzy_coklu_secildi').length,
         eslesmedi: personel.filter(x => x.durum === 'eslesme_yok').length,
       },
     },

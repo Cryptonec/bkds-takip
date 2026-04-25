@@ -1,12 +1,21 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { Search, Plus, UserCheck, UserX, X } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Search, Plus, UserCheck, UserX, X, Upload, FileSpreadsheet, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 interface Staff {
   id: string;
   adSoyad: string;
   aktif: boolean;
   normalizedName: string;
+}
+
+interface ImportResult {
+  eklenen: number;
+  atlanan: number;
+  hatali: number;
+  toplam: number;
+  formatTipi?: string;
+  errors: Array<{ row: number; reason: string }>;
 }
 
 export default function PersonelPage() {
@@ -17,6 +26,9 @@ export default function PersonelPage() {
   const [adSoyad, setAdSoyad] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
     setLoading(true);
@@ -56,20 +68,123 @@ export default function PersonelPage() {
     }
   }
 
+  async function handleImport(file: File) {
+    if (!file) return;
+    setUploading(true);
+    setImportResult(null);
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetch('/api/personel/import', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.errors || data.eklenen !== undefined) {
+        setImportResult(data);
+      } else {
+        setImportResult({
+          eklenen: 0,
+          atlanan: 0,
+          hatali: 1,
+          toplam: 0,
+          errors: [{ row: 0, reason: data.error ?? 'Yükleme başarısız' }],
+        });
+      }
+      load();
+    } catch (err: any) {
+      setImportResult({ eklenen: 0, atlanan: 0, hatali: 1, toplam: 0, errors: [{ row: 0, reason: err.message }] });
+    } finally {
+      setUploading(false);
+    }
+  }
+
   return (
     <div className="p-6 max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Personel</h1>
           <p className="text-gray-500 text-sm mt-1">{staff.length} öğretmen / uzman</p>
         </div>
-        <button
-          onClick={() => { setShowForm(!showForm); setError(''); }}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-        >
-          {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-          {showForm ? 'İptal' : 'Personel Ekle'}
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleImport(f);
+              e.target.value = '';
+            }}
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            {uploading ? 'Yükleniyor...' : 'Excel Yükle'}
+          </button>
+          <button
+            onClick={() => { setShowForm(!showForm); setError(''); }}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            {showForm ? 'İptal' : 'Personel Ekle'}
+          </button>
+        </div>
+      </div>
+
+      {/* Import sonucu */}
+      {importResult && (
+        <div className={`border rounded-xl p-4 mb-5 ${
+          importResult.hatali === 0
+            ? 'bg-green-50 border-green-200'
+            : importResult.eklenen > 0
+              ? 'bg-yellow-50 border-yellow-200'
+              : 'bg-red-50 border-red-200'
+        }`}>
+          <div className="flex items-center gap-2 mb-2">
+            {importResult.hatali === 0 ? (
+              <CheckCircle className="w-5 h-5 text-green-600" />
+            ) : (
+              <XCircle className="w-5 h-5 text-red-500" />
+            )}
+            <p className="font-semibold text-sm text-gray-900">
+              {importResult.eklenen} eklendi
+              {importResult.atlanan > 0 && `, ${importResult.atlanan} zaten vardı`}
+              {importResult.hatali > 0 && `, ${importResult.hatali} hatalı`}
+            </p>
+            <button onClick={() => setImportResult(null)} className="ml-auto text-gray-400 hover:text-gray-600">
+              <XCircle className="w-4 h-4" />
+            </button>
+          </div>
+          {importResult.errors.length > 0 && (
+            <div className="space-y-0.5 mt-2">
+              {importResult.errors.slice(0, 5).map((e, i) => (
+                <p key={i} className="text-xs text-red-700">Satır {e.row}: {e.reason}</p>
+              ))}
+              {importResult.errors.length > 5 && (
+                <p className="text-xs text-gray-500">... ve {importResult.errors.length - 5} hata daha</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Format bilgisi */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-5 text-xs text-blue-800">
+        <p className="flex items-center gap-1.5 font-medium mb-1">
+          <FileSpreadsheet className="w-3.5 h-3.5" /> Hangi dosyayı yükleyebilirsin?
+        </p>
+        <ul className="list-disc list-inside space-y-0.5">
+          <li><strong>BRY personel listesi Excel</strong> — ADI / SOYADI kolonları otomatik tanınır</li>
+          <li><strong>Lila yoklama .xls</strong> — yoklamadan personel/öğretmen isimleri çekilir</li>
+          <li><strong>Standart Excel/CSV</strong> — başlık satırı: <code className="bg-blue-100 px-1 rounded">Ad Soyad</code></li>
+          <li><strong>Tek sütun isim listesi</strong> — sadece adların alt alta olduğu .xlsx</li>
+        </ul>
+        <p className="mt-1 text-blue-600">
+          Mevcut personel varsa atlanır, duplicate eklenmez. <strong>Dersi olmayan personeli</strong> de
+          buradan ekleyerek BKDS girişlerinde görünür yapabilirsin.
+        </p>
       </div>
 
       {showForm && (
