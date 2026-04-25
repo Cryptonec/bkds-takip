@@ -1,9 +1,8 @@
 'use client';
 import Link from 'next/link';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLiveAttendance } from '@/lib/hooks/useLiveAttendance';
 import { OgrenciPaneli, StatusSummaryBar } from '@/components/canli/OgrenciPaneli';
-import { PersonelPaneli } from '@/components/canli/PersonelPaneli';
 import { PersonelMiniPanel } from '@/components/canli/PersonelMiniPanel';
 import { BildirimPanel } from '@/components/canli/BildirimPanel';
 import { ColorLegend } from '@/components/canli/ColorLegend';
@@ -64,7 +63,6 @@ function saveSet(key: string, s: Set<string>) {
 }
 
 export default function CanliPage() {
-  const [activeTab, setActiveTab] = useState<'ogrenci' | 'personel'>('ogrenci');
   const [ogrenciFilter, setOgrenciFilter] = useState('hepsi');
   const [colorblind, setColorblind] = useState(false);
   const [dersEkleOpen, setDersEkleOpen] = useState(false);
@@ -111,7 +109,8 @@ export default function CanliPage() {
     setTimeout(() => setErrorToast(null), 4000);
   }
 
-  async function handleDeleteLesson(lessonSessionId: string, ogrenciAdi: string) {
+  // useCallback — OgrenciPaneli memo'sunun props referansi stabil kalsin
+  const handleDeleteLesson = useCallback(async (lessonSessionId: string, ogrenciAdi: string) => {
     try {
       const res = await fetch(`/api/lesson-sessions/${lessonSessionId}`, { method: 'DELETE' });
       if (!res.ok) {
@@ -123,7 +122,9 @@ export default function CanliPage() {
     } catch {
       showError(`${ogrenciAdi} dersi silinirken hata oluştu`);
     }
-  }
+  }, [refresh]);
+
+  const toggleColorblind = useCallback(() => setColorblind(v => !v), []);
 
   // Silinmişleri dışarda bırak
   const gorunurBildirimler = useMemo(
@@ -326,27 +327,7 @@ export default function CanliPage() {
       </div>
 
       {/* Renk legendi */}
-      <ColorLegend colorblind={colorblind} onToggleColorblind={() => setColorblind(v => !v)} />
-
-      {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 px-6 shrink-0">
-        <div className="flex">
-          {[
-            { key: 'ogrenci', label: 'Öğrenci Takibi', count: data?.ogrenciRows.length },
-            { key: 'personel', label: 'Personel Takibi', count: (data?.tumPersonelGirisler ?? []).filter((p: any) => p.ilkGiris).length },
-          ].map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
-              className={cn('px-5 py-3 text-sm font-medium border-b-2 transition-colors',
-                activeTab === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-              )}>
-              {tab.label}
-              {tab.count !== undefined && (
-                <span className="ml-2 bg-gray-100 text-gray-600 text-xs px-1.5 py-0.5 rounded-full">{tab.count}</span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
+      <ColorLegend colorblind={colorblind} onToggleColorblind={toggleColorblind} />
 
       {/* İçerik */}
       <div className="flex-1 overflow-auto bg-white">
@@ -355,7 +336,7 @@ export default function CanliPage() {
             <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
           </div>
         )}
-        {data && activeTab === 'ogrenci' && (
+        {data && (
           <>
             <PersonelMiniPanel
               rows={data.personelRows}
@@ -369,9 +350,6 @@ export default function CanliPage() {
               onDelete={handleDeleteLesson}
             />
           </>
-        )}
-        {data && activeTab === 'personel' && (
-          <PersonelPaneli rows={data.personelRows} tumPersonelGirisler={data.tumPersonelGirisler ?? []} onRefresh={refresh} />
         )}
       </div>
 

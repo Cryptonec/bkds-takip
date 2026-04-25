@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, memo } from 'react';
 import Link from 'next/link';
 import { formatTime } from '@/lib/utils';
 import type { PersonelRow, PersonelGiris } from '@/lib/hooks/useLiveAttendance';
@@ -79,7 +79,7 @@ const PANEL_OPEN_KEY = 'canli-personel-mini-open';
  * gösterilir; gerçek isim için /personel sayfasından eklenmesi önerilir.
  * Kullanıcı tercih ettiği aç/kapa durumu localStorage'da tutulur.
  */
-export function PersonelMiniPanel({ rows, tumPersonelGirisler }: Props) {
+function PersonelMiniPanelInner({ rows, tumPersonelGirisler }: Props) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     const v = typeof window !== 'undefined' ? localStorage.getItem(PANEL_OPEN_KEY) : null;
@@ -165,7 +165,10 @@ export function PersonelMiniPanel({ rows, tumPersonelGirisler }: Props) {
   );
 }
 
-function PersonelMiniKart({ p }: { p: MiniPersonel }) {
+// rows + tumPersonelGirisler reference esitse re-render edilmez → flicker yok
+export const PersonelMiniPanel = memo(PersonelMiniPanelInner);
+
+const PersonelMiniKart = memo(function PersonelMiniKart({ p }: { p: MiniPersonel }) {
   const inside = !!p.ilkGiris && !p.sonCikis;
   const left = !!p.ilkGiris && !!p.sonCikis;
   const waiting = !p.ilkGiris;
@@ -213,4 +216,4 @@ function PersonelMiniKart({ p }: { p: MiniPersonel }) {
       </div>
     </div>
   );
-}
+});

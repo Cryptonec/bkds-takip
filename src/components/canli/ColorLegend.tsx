@@ -1,4 +1,5 @@
 'use client';
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import {
   AlertTriangle, LogOut, Clock, CheckCircle2, Users, Shield, XCircle,
@@ -46,7 +47,7 @@ interface ColorLegendProps {
   onToggleColorblind: () => void;
 }
 
-export function ColorLegend({ colorblind, onToggleColorblind }: ColorLegendProps) {
+export const ColorLegend = memo(function ColorLegend({ colorblind, onToggleColorblind }: ColorLegendProps) {
   return (
     <div className="bg-white border-b border-gray-200 px-4 py-2">
       <div className="flex items-center gap-2 flex-wrap">
@@ -85,4 +86,4 @@ export function ColorLegend({ colorblind, onToggleColorblind }: ColorLegendProps
       </div>
     </div>
   );
-}
+});

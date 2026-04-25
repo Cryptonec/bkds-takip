@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, memo, useMemo } from 'react';
 import { formatTime } from '@/lib/utils';
 import type { OgrenciRow } from '@/lib/hooks/useLiveAttendance';
 import { cn } from '@/lib/utils';
@@ -115,16 +115,25 @@ interface OgrenciPaneliProps {
   onDelete?: (lessonSessionId: string, ogrenciAdi: string) => void;
 }
 
-export function OgrenciPaneli({ rows, filter, colorblind = false, onDelete }: OgrenciPaneliProps) {
-  const now = new Date();
+function OgrenciPaneliInner({ rows, filter, colorblind = false, onDelete }: OgrenciPaneliProps) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ muaf: true });
 
-  const filtered = filter && filter !== 'hepsi' ? rows.filter(r => r.status === filter) : rows;
+  const filtered = useMemo(
+    () => (filter && filter !== 'hepsi' ? rows.filter(r => r.status === filter) : rows),
+    [rows, filter],
+  );
+  // now sadece veri her degistiginde yeniden hesaplanir; tum saniyelik
+  // re-render'larda degil. saat-bucket'lari ve sirayi etkileyen ana faktor
+  // burada degisken degil.
+  const { saatGruplari, muaflar } = useMemo(
+    () => groupBySaat(filtered, new Date()),
+    [filtered],
+  );
+
   if (filtered.length === 0) {
     return <div className="text-center py-16 text-gray-400 text-sm">Bu kategoride kayıt yok</div>;
   }
 
-  const { saatGruplari, muaflar } = groupBySaat(filtered, now);
   const toggle = (key: string) => setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
 
   return (
@@ -227,9 +236,15 @@ export function OgrenciPaneli({ rows, filter, colorblind = false, onDelete }: Og
   );
 }
 
+// Üst seviye memo — props (rows, filter, colorblind, onDelete) reference olarak
+// degismediginde yeniden render olmaz. data icerigi degismediginde rows ayni
+// referansta kalir (dataEsdeger). lastUpdated saniyelik degisse bile bu pano
+// yeniden render edilmez → "F5 etkisi" ortadan kalkar.
+export const OgrenciPaneli = memo(OgrenciPaneliInner);
+
 /* ─── Tek kart ─────────────────────────────────────────────────────────── */
 
-function OgrenciKart({
+const OgrenciKart = memo(function OgrenciKart({
   row, colorblind, onDelete,
 }: {
   row: OgrenciRow;
@@ -319,7 +334,7 @@ function OgrenciKart({
       </div>
     </div>
   );
-}
+});
 
 /* ─── Durum filtre bar ─────────────────────────────────────────────────── */
 
@@ -343,7 +358,7 @@ interface StatusSummaryBarProps {
   onFilter: (key: string) => void;
 }
 
-export function StatusSummaryBar({ counts, activeFilter, onFilter }: StatusSummaryBarProps) {
+export const StatusSummaryBar = memo(function StatusSummaryBar({ counts, activeFilter, onFilter }: StatusSummaryBarProps) {
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   return (
     <div className="flex flex-wrap gap-1.5 px-4 py-2.5 border-b border-gray-100 bg-white">
@@ -361,4 +376,4 @@ export function StatusSummaryBar({ counts, activeFilter, onFilter }: StatusSumma
       ))}
     </div>
   );
-}
+});
