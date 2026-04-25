@@ -176,7 +176,8 @@ function dataEsdeger(a: LiveData, b: LiveData): boolean {
   return JSON.stringify(pick(a)) === JSON.stringify(pick(b));
 }
 
-export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
+export function useLiveAttendance(tarih?: string, intervalMs = 5000, opts?: { silentSpeech?: boolean }) {
+  const silentSpeech = opts?.silentSpeech ?? false;
   const [data, setData] = useState<LiveData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -266,7 +267,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
           yeniPG.forEach(p => {
             if (!yakinZaman(p.ts)) return;
             playBeep('personel_giris');
-            setTimeout(() => speak(`Sayın ${p.ad}, hoş geldiniz`), 400);
+            if (!silentSpeech) setTimeout(() => speak(`Sayın ${p.ad}, hoş geldiniz`), 400);
           });
           setTimeout(() => setYeniPersonelGiris([]), 5000);
         }
@@ -283,7 +284,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
           yeniPC.forEach(p => {
             if (!yakinZaman(p.ts)) return;
             playBeep('personel_cikis');
-            setTimeout(() => speak(`Sayın ${p.ad}, güle güle`), 400);
+            if (!silentSpeech) setTimeout(() => speak(`Sayın ${p.ad}, güle güle`), 400);
           });
           setTimeout(() => setYeniPersonelCikis([]), 5000);
         }
@@ -297,7 +298,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
           yeniG.forEach(r => {
             if (!yakinZaman(new Date(r.gercekGiris!).getTime())) return;
             playBeep('giris');
-            setTimeout(() => speak(`${r.ogrenciAdi}, hoş geldiniz`), 400);
+            if (!silentSpeech) setTimeout(() => speak(`${r.ogrenciAdi}, hoş geldiniz`), 400);
           });
           setTimeout(() => setYeniGirisler([]), 5000);
         }
@@ -311,7 +312,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
           yeniC.forEach(r => {
             if (!yakinZaman(new Date(r.gercekCikis!).getTime())) return;
             playBeep('cikis');
-            setTimeout(() => speak(`${r.ogrenciAdi}, güle güle`), 400);
+            if (!silentSpeech) setTimeout(() => speak(`${r.ogrenciAdi}, güle güle`), 400);
           });
           setTimeout(() => setYeniCikislar([]), 5000);
         }
@@ -350,7 +351,7 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000) {
     } finally {
       setLoading(false);
     }
-  }, [tarih]);
+  }, [tarih, silentSpeech]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {

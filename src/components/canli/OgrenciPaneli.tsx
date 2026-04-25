@@ -60,12 +60,13 @@ function groupBySaat(rows: OgrenciRow[], now: Date) {
     return { saat, satirlar, zamanGrubu: enOnce };
   });
 
+  // Kesin kronolojik sira: en erken ders en uste, en gec en alta.
+  // (Eskiden 'aktif' grubu ustte tutuluyordu; kullanici sira karistirmasin diye
+  // istedi.)
   saatGruplari.sort((a, b) => {
-    const zd = zamanOrder[a.zamanGrubu] - zamanOrder[b.zamanGrubu];
-    if (zd !== 0) return zd;
     const aTime = new Date(a.satirlar[0].baslangic).getTime();
     const bTime = new Date(b.satirlar[0].baslangic).getTime();
-    return a.zamanGrubu === 'gecmis' ? bTime - aTime : aTime - bTime;
+    return aTime - bTime;
   });
 
   return { saatGruplari, muaflar };
