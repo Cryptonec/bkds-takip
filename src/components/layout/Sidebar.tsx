@@ -39,14 +39,13 @@ export function Sidebar() {
     if (mounted) localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0');
   }, [collapsed, mounted]);
 
-  // Dokunmatik ekranlarda Link onClick bazen 'sticky hover' yuzunden
-  // ikinci tikla cagriliyor. onPointerUp ile parmak kalkar kalkmaz
-  // navigasyonu tetikleyerek tek tikla gecisi garanti ediyoruz.
-  const handlePointerNav = useCallback((href: string) => (e: React.PointerEvent) => {
-    if (e.pointerType !== 'mouse' && pathname !== href) {
-      e.preventDefault();
-      router.push(href);
-    }
+  // Hem mouse hem dokunmatik icin tek bicimli navigasyon: onClick + router.push
+  // (preventDefault Link'in default navigasyonunu durdurur, router.push tek
+  // tikla calisir). onPointerUp denenmisti ama bazi tarayicilarda mouse
+  // click'ini bloke ediyordu.
+  const handleNav = useCallback((href: string) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (pathname !== href) router.push(href);
   }, [router, pathname]);
 
   return (
@@ -89,7 +88,7 @@ export function Sidebar() {
                 key={href}
                 href={href}
                 title={collapsed ? label : undefined}
-                onPointerUp={handlePointerNav(href)}
+                onClick={handleNav(href)}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors touch-manipulation select-none',
                   collapsed && 'justify-center px-2',
