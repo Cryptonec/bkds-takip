@@ -109,8 +109,10 @@ export function matchMaskedName(masked: string, full: string): boolean {
   const starStart = masked.indexOf('*');
   const starEnd = masked.lastIndexOf('*');
 
-  const prefix = masked.slice(0, starStart).toUpperCase();
-  const suffix = masked.slice(starEnd + 1).toUpperCase();
+  // BKDS bazen "MUS************ AY" gibi suffix'te bosluk birakir.
+  // Tam isim de "MUSTAFA EMIRHAN AY" — her iki tarafi da bosluksuzlastiririz.
+  const prefix = masked.slice(0, starStart).replace(/\s+/g, '').toUpperCase();
+  const suffix = masked.slice(starEnd + 1).replace(/\s+/g, '').toUpperCase();
 
   // Boşluksuz tam isim
   const fullClean = full.replace(/\s+/g, '').toUpperCase()
@@ -158,7 +160,7 @@ export function matchMaskedNameFuzzy(masked: string, full: string): {
 
   // Sadece prefix eşleştir (soyisim değişikliği senaryosu)
   const starIdx = masked.indexOf('*');
-  const prefix = masked.slice(0, starIdx).toUpperCase()
+  const prefix = masked.slice(0, starIdx).replace(/\s+/g, '').toUpperCase()
     .replace(/Ç/g, 'C').replace(/Ğ/g, 'G').replace(/İ/g, 'I')
     .replace(/Ö/g, 'O').replace(/Ş/g, 'S').replace(/Ü/g, 'U');
 
