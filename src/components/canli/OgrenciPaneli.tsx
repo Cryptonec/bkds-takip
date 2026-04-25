@@ -314,16 +314,15 @@ const OgrenciKart = memo(function OgrenciKart({
         </p>
       </div>
 
-      {/* Alt: saat aralığı + giriş/çıkış */}
-      <div className="px-3 py-1.5 bg-black/25 text-[11px] font-semibold flex items-center gap-2 flex-wrap">
-        <span className="tabular-nums">
-          {formatTime(row.baslangic)} – {formatTime(row.bitis)}
-        </span>
-        {row.gercekGiris && (
-          <span className="inline-flex items-center gap-0.5 tabular-nums ml-auto">
+      {/* Alt: gerçek giriş/çıkış (ders saat aralığı kart başlığında zaten saat-bucket'inda gösteriliyor) */}
+      <div className="px-3 py-1.5 bg-black/25 text-[11px] font-semibold flex items-center gap-3 flex-wrap">
+        {row.gercekGiris ? (
+          <span className="inline-flex items-center gap-0.5 tabular-nums">
             <UserCheck className="w-3 h-3" />
             {formatTime(row.gercekGiris)}
           </span>
+        ) : (
+          <span className="text-white/60">—</span>
         )}
         {row.gercekCikis && (
           <span className="inline-flex items-center gap-0.5 tabular-nums">
