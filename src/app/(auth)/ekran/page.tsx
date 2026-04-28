@@ -22,23 +22,53 @@ function toTurkishTitle(text: string): string {
     .replace(/Ç/g, 'ç');
 }
 
-// TTS kuyruğu — çoklu giriş/çıkışta sırayla söylensin
-const _ttsQueue: string[] = [];
-let _ttsPlaying = false;
+// TTS kuyruğu — window seviyesinde singleton. Dev modunda Next.js HMR
+// dosyayi yeniden yukleyip module-level degiskenleri sifirlasa da
+// window'daki state ve calan Audio referansi korunur, isim okumasi
+// yarida kesilmez. Production'da etkisi yok.
+type TtsState = {
+  queue: string[];
+  playing: boolean;
+  current: HTMLAudioElement | null;
+};
+
+function getTts(): TtsState {
+  const w = window as any;
+  if (!w.__bkdsTts) {
+    w.__bkdsTts = { queue: [], playing: false, current: null } as TtsState;
+  }
+  return w.__bkdsTts as TtsState;
+}
 
 function _playNext() {
-  if (_ttsPlaying || _ttsQueue.length === 0) return;
-  const text = _ttsQueue.shift()!;
-  _ttsPlaying = true;
+  if (typeof window === 'undefined') return;
+  const tts = getTts();
+  if (tts.playing || tts.queue.length === 0) return;
+  const text = tts.queue.shift()!;
+  tts.playing = true;
   try {
     const audio = new Audio(`/api/tts?text=${encodeURIComponent(text)}`);
+    tts.current = audio;
     audio.volume = 1.0;
-    audio.playbackRate = 1.25; // biraz daha hızlı konuşma
-    audio.addEventListener('ended', () => { _ttsPlaying = false; _playNext(); });
-    audio.addEventListener('error', () => { _ttsPlaying = false; _playNext(); });
-    audio.play().catch(() => { _ttsPlaying = false; _playNext(); });
+    audio.playbackRate = 1.25;
+    audio.addEventListener('ended', () => {
+      tts.playing = false;
+      tts.current = null;
+      _playNext();
+    });
+    audio.addEventListener('error', () => {
+      tts.playing = false;
+      tts.current = null;
+      _playNext();
+    });
+    audio.play().catch(() => {
+      tts.playing = false;
+      tts.current = null;
+      _playNext();
+    });
   } catch {
-    _ttsPlaying = false;
+    tts.playing = false;
+    tts.current = null;
     _playNext();
   }
 }
@@ -47,7 +77,7 @@ function speak(text: string) {
   if (typeof window === 'undefined') return;
   if (text.includes('*')) return;
   const normalized = toTurkishTitle(text);
-  _ttsQueue.push(normalized);
+  getTts().queue.push(normalized);
   _playNext();
 }
 
