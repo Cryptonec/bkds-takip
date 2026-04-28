@@ -88,6 +88,86 @@ function dedupe(names: string[]): string[] {
   return out;
 }
 
+export interface StudentRecord {
+  adSoyad: string;
+  ogrenciNo?: string;
+  tc?: string;
+}
+
+interface HeaderInfoEx extends HeaderInfo {
+  tcCol: number;
+  ogrenciNoCol: number;
+}
+
+function findHeaderRowEx(rows: unknown[][]): HeaderInfoEx | null {
+  const base = findHeaderRow(rows);
+  if (!base) return null;
+  const cells = (rows[base.idx] ?? []).map(c => normalize(cellStr(c)));
+  let tcCol = -1, ogrenciNoCol = -1;
+  for (let j = 0; j < cells.length; j++) {
+    const c = cells[j];
+    // TC kolonu
+    if (tcCol === -1 && (
+      c === 'tc' || c === 'tckn' || c === 't c kimlik' || c === 't c kimlik no' ||
+      c === 'kimlik no' || c === 'kimlik' || c === 'tc kimlik' || c === 'tc no' ||
+      c === 't c no' || c === 'tc kimlik no'
+    )) tcCol = j;
+    // Öğrenci no
+    if (ogrenciNoCol === -1 && (
+      c === 'ogrenci no' || c === 'okul no' || c === 'no' || c === 'numara' ||
+      c === 'ogr no'
+    )) ogrenciNoCol = j;
+  }
+  return { ...base, tcCol, ogrenciNoCol };
+}
+
+/**
+ * parseStudentNamesFromSheet'in genişletilmiş hali — ad-soyad'ın yanında
+ * TC ve öğrenci no'yu da yakalar. BRY öğrenci listesi Excel'inde
+ * 'T.C. KİMLİK NO' ve 'ÖĞRENCİ NO' kolonları otomatik tanınır.
+ */
+export function parseStudentRecordsFromSheet(rows: unknown[][]): StudentRecord[] {
+  if (!rows || rows.length === 0) return [];
+
+  const header = findHeaderRowEx(rows);
+
+  if (header) {
+    const seen = new Set<string>();
+    const out: StudentRecord[] = [];
+    for (let i = header.idx + 1; i < rows.length; i++) {
+      const r = rows[i] ?? [];
+      let ad = '';
+      if (header.fullCol >= 0) {
+        ad = cellStr(r[header.fullCol]);
+      } else if (header.adCol >= 0 && header.soyadCol >= 0) {
+        const a = cellStr(r[header.adCol]);
+        const s = cellStr(r[header.soyadCol]);
+        ad = [a, s].filter(Boolean).join(' ').trim();
+      }
+      if (!ad || ad.length < 2 || isJunkCell(ad)) continue;
+
+      const tcRaw = header.tcCol >= 0 ? cellStr(r[header.tcCol]) : '';
+      const tc = tcRaw.replace(/\D/g, '');
+      const ogrNo = header.ogrenciNoCol >= 0 ? cellStr(r[header.ogrenciNoCol]) : '';
+
+      const key = normalize(ad);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        adSoyad: ad.trim().replace(/\s+/g, ' '),
+        ogrenciNo: ogrNo || undefined,
+        tc: tc.length >= 4 && tc.length <= 11 ? tc : undefined,
+      });
+    }
+    return out;
+  }
+
+  // Header yoksa sadece isim çek (TC tahmin edilemez)
+  return parseStudentNamesFromSheet(rows).map(adSoyad => ({ adSoyad }));
+}
+
+// JS-only export uyumlulugu icin yardimci - isJunkCell ve normalize zaten yukarida.
+
 export function parseStudentNamesFromSheet(rows: unknown[][]): string[] {
   if (!rows || rows.length === 0) return [];
 

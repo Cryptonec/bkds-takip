@@ -16,6 +16,7 @@ interface ImportResult {
   atlanan: number;
   hatali: number;
   toplam: number;
+  tcGuncellenen?: number;
   errors: Array<{ row: number; reason: string }>;
 }
 
@@ -202,6 +203,7 @@ export default function OgrencilerPage() {
             <p className="font-semibold text-sm text-gray-900">
               {importResult.eklenen} eklendi
               {importResult.atlanan > 0 && `, ${importResult.atlanan} zaten vardı`}
+              {importResult.tcGuncellenen ? `, ${importResult.tcGuncellenen} TC güncellendi` : ''}
               {importResult.hatali > 0 && `, ${importResult.hatali} hatalı`}
             </p>
             <button onClick={() => setImportResult(null)} className="ml-auto text-gray-400 hover:text-gray-600">
