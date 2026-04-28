@@ -190,10 +190,23 @@ function playBeep(tip: 'giris' | 'cikis' | 'uyari' | 'kritik' | 'personel_giris'
  * alanlar hariç ogrenciRows, personelRows, bildirimler, tumPersonelGirisler,
  * tumOgrenciGirisler, statusCounts karşılaştırılır. Aynıysa React setData
  * atlanır, re-render yapılmaz.
+ *
+ * NOT: ogrenciRows içindeki dakikaKaldi/yaklasanUyari/gelmediUyari/
+ * erkenCikisUyari alanları SUNUCUDA `now` ile yeniden hesaplanır;
+ * her poll'da degisir. Karsilastirmadan disarida tutulur — yoksa
+ * F5 benzeri yeniden render olur. Bu alanlardaki gercek degisiklik
+ * (status / gercekGiris / gercekCikis vb.) zaten yakalaniyor.
  */
+function stripVolatile(rows: OgrenciRow[]): any[] {
+  return rows.map(r => {
+    const { dakikaKaldi, yaklasanUyari, gelmediUyari, erkenCikisUyari, minKalmaSuresi, ...rest } = r;
+    return rest;
+  });
+}
+
 function dataEsdeger(a: LiveData, b: LiveData): boolean {
   const pick = (d: LiveData) => ({
-    ogrenciRows: d.ogrenciRows,
+    ogrenciRows: stripVolatile(d.ogrenciRows),
     personelRows: d.personelRows,
     bildirimler: d.bildirimler,
     tumPersonelGirisler: d.tumPersonelGirisler,
