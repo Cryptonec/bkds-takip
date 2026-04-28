@@ -176,28 +176,32 @@ export function matchMaskedNameFuzzy(masked: string, full: string): {
 }
 
 /**
- * Maskeli TC ile tam TC karşılaştırması.
- * BKDS '12345*****01' veya '*****56789**' gibi maskeli TC döner.
- * '*' ve sayısal olmayan karakterleri joker sayar; geri kalan
- * pozisyonlarda char-char eşitlik bekler.
+ * Maskeli TC ile DB TC'si karşılaştırması.
+ * BKDS formatı: '*******0666' — ilk 7 hane maskeli, son 4 hane açık.
  *
- * Aynı isim prefix+suffix'inde iki farklı kişi olduğunda (Muhsin Üçpınar
- * vs Muhammed Senih Yanar — ikisi de MUH...NAR) TC tie-breaker olarak
- * kullanılır. Boş/eksik veride 'belirsiz' döner; çağıran fallback yapar.
+ * DB'de saklanan TC tam 11 hane olabileceği gibi sadece son 4 hane (örn.
+ * '0666') de olabilir. Algoritma: maske içindeki görünür (sondaki) rakam
+ * dizisini çıkarır ve DB TC'sinin son N hanesiyle eşitler.
+ *
+ * Örnek:
+ *   maskedTc='*******0666', fullTc='12345670666' → eslesti (son 4 = '0666')
+ *   maskedTc='*******0666', fullTc='0666'        → eslesti
+ *   maskedTc='*******0666', fullTc='1234'        → eslesmedi
+ *   maskedTc=null veya fullTc=null               → belirsiz
  */
 export function matchMaskedTc(maskedTc: string | null | undefined, fullTc: string | null | undefined):
   'eslesti' | 'eslesmedi' | 'belirsiz'
 {
   if (!maskedTc || !fullTc) return 'belirsiz';
   const m = String(maskedTc).replace(/\s+/g, '');
-  const f = String(fullTc).replace(/\s+/g, '');
+  const f = String(fullTc).replace(/\D+/g, ''); // sadece rakamlar
   if (m.length === 0 || f.length === 0) return 'belirsiz';
-  // Eğer maske ile tam TC uzunluk uyumsuzsa karar veremeyiz
-  if (m.length !== f.length) return 'belirsiz';
-  for (let i = 0; i < m.length; i++) {
-    const c = m[i];
-    if (c === '*' || !/\d/.test(c)) continue; // joker
-    if (c !== f[i]) return 'eslesmedi';
-  }
-  return 'eslesti';
+
+  // Görünür suffix rakamları çıkar — tüm yıldızlardan sonraki sayısal kısım
+  const m2 = m.replace(/^\*+/, '');
+  const visible = m2.replace(/\D+/g, '');
+  if (visible.length === 0) return 'belirsiz'; // hiç görünür rakam yok
+
+  if (f.length < visible.length) return 'belirsiz'; // DB'deki TC çok kısa
+  return f.slice(-visible.length) === visible ? 'eslesti' : 'eslesmedi';
 }
