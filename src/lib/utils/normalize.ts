@@ -174,3 +174,30 @@ export function matchMaskedNameFuzzy(masked: string, full: string): {
 
   return { score: 0, type: 'eslesme_yok' };
 }
+
+/**
+ * Maskeli TC ile tam TC karşılaştırması.
+ * BKDS '12345*****01' veya '*****56789**' gibi maskeli TC döner.
+ * '*' ve sayısal olmayan karakterleri joker sayar; geri kalan
+ * pozisyonlarda char-char eşitlik bekler.
+ *
+ * Aynı isim prefix+suffix'inde iki farklı kişi olduğunda (Muhsin Üçpınar
+ * vs Muhammed Senih Yanar — ikisi de MUH...NAR) TC tie-breaker olarak
+ * kullanılır. Boş/eksik veride 'belirsiz' döner; çağıran fallback yapar.
+ */
+export function matchMaskedTc(maskedTc: string | null | undefined, fullTc: string | null | undefined):
+  'eslesti' | 'eslesmedi' | 'belirsiz'
+{
+  if (!maskedTc || !fullTc) return 'belirsiz';
+  const m = String(maskedTc).replace(/\s+/g, '');
+  const f = String(fullTc).replace(/\s+/g, '');
+  if (m.length === 0 || f.length === 0) return 'belirsiz';
+  // Eğer maske ile tam TC uzunluk uyumsuzsa karar veremeyiz
+  if (m.length !== f.length) return 'belirsiz';
+  for (let i = 0; i < m.length; i++) {
+    const c = m[i];
+    if (c === '*' || !/\d/.test(c)) continue; // joker
+    if (c !== f[i]) return 'eslesmedi';
+  }
+  return 'eslesti';
+}

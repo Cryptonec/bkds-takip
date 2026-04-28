@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { matchMaskedName, matchMaskedNameFuzzy } from '@/lib/utils/normalize';
+import { matchMaskedName, matchMaskedNameFuzzy, matchMaskedTc } from '@/lib/utils/normalize';
 
 interface BkdsApiRecord {
   individual_uuid: string;
@@ -278,16 +278,31 @@ export class BkdsProviderService {
       const ilkGiris = new Date(Math.min(...recs.map(r => new Date(r.first_entry).getTime())));
       const cikislar = recs.filter(r => r.last_exit).map(r => new Date(r.last_exit!).getTime());
       const sonCikis = cikislar.length > 0 ? new Date(Math.max(...cikislar)) : null;
-      // 1) Önce tam/maskeli eşleşme (mevcut), 2) Olmazsa fuzzy prefix eşleşme
-      let student = allStudents.find(s => matchMaskedName(maskedName, s.adSoyad));
+      // BKDS aynı maskeli isim için aynı maskedTc'yi gönderir; ilk record'tan al
+      const maskedTc = recs[0]?.individual_identity_number || null;
+
+      // 1) Tam (prefix+suffix) match — birden çok aday olabilir (MUH...NAR
+      //    hem MUHSIN UCPINAR hem MUHAMMED YANAR'a uyar). TC tie-breaker.
+      const tamAdaylar = allStudents.filter(s => matchMaskedName(maskedName, s.adSoyad));
+      let student = tamAdaylar.length === 1
+        ? tamAdaylar[0]
+        : tamAdaylar.find(s => matchMaskedTc(maskedTc, s.tc) === 'eslesti');
+      if (!student && tamAdaylar.length > 0) {
+        // TC bilgisi yoksa veya hiçbiri eşleşmediyse: ilk adayi al (eski davranis)
+        student = tamAdaylar[0];
+      }
+      // 2) Fuzzy (prefix-only) — soyad değişmiş senaryosu
       if (!student) {
         const fuzzy = allStudents
           .map(s => ({ s, r: matchMaskedNameFuzzy(maskedName, s.adSoyad) }))
           .filter(x => x.r.type === 'prefix_eslesme')
           .sort((a, b) => b.r.score - a.r.score);
-        // Tek sonuç varsa kesin eşleştir; çok sonuç varsa en yüksek skorlu olanı kullan
-        // (eskiden çok sonuç → atla idi, kullanıcı eşleşmiyor diye şikayet ediyordu)
-        if (fuzzy.length >= 1) student = fuzzy[0].s;
+        if (fuzzy.length === 1) {
+          student = fuzzy[0].s;
+        } else if (fuzzy.length > 1) {
+          // Çok aday — TC tie-breaker, yoksa en yüksek skor
+          student = fuzzy.find(x => matchMaskedTc(maskedTc, x.s.tc) === 'eslesti')?.s ?? fuzzy[0].s;
+        }
       }
       if (student) {
         ogrEslesen++;
