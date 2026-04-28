@@ -1,7 +1,7 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import {
   LayoutDashboard, Monitor, Users, GraduationCap,
@@ -25,7 +25,6 @@ const SIDEBAR_KEY = 'sidebar-collapsed';
 
 export function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
   const { data: session } = useSession();
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -38,15 +37,6 @@ export function Sidebar() {
   useEffect(() => {
     if (mounted) localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0');
   }, [collapsed, mounted]);
-
-  // Hem mouse hem dokunmatik icin tek bicimli navigasyon: onClick + router.push
-  // (preventDefault Link'in default navigasyonunu durdurur, router.push tek
-  // tikla calisir). onPointerUp denenmisti ama bazi tarayicilarda mouse
-  // click'ini bloke ediyordu.
-  const handleNav = useCallback((href: string) => (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (pathname !== href) router.push(href);
-  }, [router, pathname]);
 
   return (
     <>
@@ -88,9 +78,9 @@ export function Sidebar() {
                 key={href}
                 href={href}
                 title={collapsed ? label : undefined}
-                onClick={handleNav(href)}
+                prefetch={false}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors touch-manipulation select-none',
+                  'flex items-center gap-3 px-3 py-2 rounded-lg text-sm touch-manipulation select-none',
                   collapsed && 'justify-center px-2',
                   active
                     ? 'bg-blue-600 text-white'

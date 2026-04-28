@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useLiveAttendance } from '@/lib/hooks/useLiveAttendance';
 import { OgrenciPaneli, StatusSummaryBar } from '@/components/canli/OgrenciPaneli';
 import { PersonelMiniPanel } from '@/components/canli/PersonelMiniPanel';
@@ -85,6 +85,22 @@ export default function CanliPage() {
     setReadIds(loadSet(BILDIRIM_READ_KEY));
     setDeletedIds(loadSet(BILDIRIM_DELETED_KEY));
   }, []);
+
+  // Sayfa ilk acildiginda mevcut bildirimleri otomatik 'okundu' say —
+  // kullanici bildirimi 5 saat once gormus olsun, /canli yeni acildiginda
+  // 'X yeni bildirim' demesin. Sadece sayfa acildiktan sonra gelenler 'yeni'.
+  const initialBildirimMarkedRef = useRef(false);
+  useEffect(() => {
+    if (initialBildirimMarkedRef.current) return;
+    if (!data?.bildirimler) return;
+    initialBildirimMarkedRef.current = true;
+    setReadIds(prev => {
+      const next = new Set(prev);
+      data.bildirimler.forEach(b => next.add(b.id));
+      saveSet(BILDIRIM_READ_KEY, next);
+      return next;
+    });
+  }, [data?.bildirimler]);
 
   useEffect(() => {
     localStorage.setItem(COLORBLIND_KEY, colorblind ? '1' : '0');
