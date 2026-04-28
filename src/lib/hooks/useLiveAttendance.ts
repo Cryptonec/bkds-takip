@@ -135,9 +135,37 @@ function playNextInQueue() {
   }
 }
 
+// Singleton AudioContext — tarayicinin autoplay policy'si gereginden
+// dolayi her beep'te yeni context yarattigimizda 'suspended' kaliyordu.
+// Tek context tutuyoruz, kullanici sayfada bir kez tikladiginda resume
+// edilir; sonraki beep'ler garantili calar.
+function getAudioCtx(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as any;
+  if (!w.__bkdsAudioCtx) {
+    try {
+      w.__bkdsAudioCtx = new (window.AudioContext || w.webkitAudioContext)();
+      // Ilk user gesture'da resume — autoplay policy'yi atlatma
+      const resume = () => {
+        const ctx = w.__bkdsAudioCtx as AudioContext;
+        if (ctx?.state === 'suspended') ctx.resume().catch(() => {});
+      };
+      ['click', 'keydown', 'touchstart', 'pointerdown'].forEach(ev => {
+        window.addEventListener(ev, resume, { passive: true });
+      });
+    } catch {
+      return null;
+    }
+  }
+  return w.__bkdsAudioCtx;
+}
+
 function playBeep(tip: 'giris' | 'cikis' | 'uyari' | 'kritik' | 'personel_giris' | 'personel_cikis') {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  // Suspended ise resume dene (ilk gesture'da olur)
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     const gain = ctx.createGain();
     gain.connect(ctx.destination);
     const freqMap: Record<string, number[]> = {
@@ -199,6 +227,10 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000, opts?: { si
   const [yeniPersonelCikis, setYeniPersonelCikis] = useState<Array<{id:string;ad:string;derslik?:string}>>([]);
 
   const isFirstFetch = useRef(true);
+  // Sayfa acilis zamani — bu zamandan ONCE gerceklesmis giris/cikis'lar
+  // "gecmis kayit" sayilir, toast/beep tetiklemez. Sadece sayfa acildiktan
+  // SONRA olanlar yeni etkinlik kabul edilir.
+  const sayfaAcilisTs = useRef(Date.now());
 
   const fetchData = useCallback(async () => {
     try {
@@ -249,11 +281,14 @@ export function useLiveAttendance(tarih?: string, intervalMs = 5000, opts?: { si
         });
       }
 
-      // Ses sadece SON 2 DK içinde gerçekleşen kayıtlar için — stale veriye
-      // "güle güle" demeyi önler (server restart / ilk açılış / HMR vs.)
-      const SES_ESIK_MS = 2 * 60 * 1000;
+      // Yeni etkinlik: sayfa acildiktan SONRA gerceklesmis olmali. Boylece
+      // sayfa F5'lendiginde ya da ilk acildiginda gunun gecmis girisleri
+      // toast/beep tetiklemez. Ek olarak SON 5 DK icinde olmali — eski stale
+      // veriye sayfa acildiktan sonra denk gelinse bile guvenli kalir.
+      const SES_ESIK_MS = 5 * 60 * 1000;
       const simdi = Date.now();
-      const yakinZaman = (ts: number) => ts > 0 && simdi - ts < SES_ESIK_MS;
+      const yakinZaman = (ts: number) =>
+        ts > 0 && ts >= sayfaAcilisTs.current && simdi - ts < SES_ESIK_MS;
 
       if (!isFirstFetch.current) {
         // --- Yeni personel girişleri ---
